@@ -251,6 +251,13 @@ const statsPanel = makePanel(0.9,0.5,(c,w,h)=>{
 });
 statsPanel.position.set(0,-0.35,-0.9); statsPanel.rotation.x=-0.5; camera.add(statsPanel); // follows your view
 function refreshStats(){ statsPanel.userData.redraw(); }
+// mic mute toggle, tappable in VR (follows your view)
+const muteBtn = makePanel(0.28,0.18,(c,w,h)=>{ c.clearRect(0,0,w,h); const m=(typeof MP!=='undefined'&&MP.muted);
+  c.fillStyle=m?'rgba(60,12,20,0.92)':'rgba(8,20,12,0.92)'; roundRect(c,2,2,w-4,h-4,18); c.fill();
+  c.lineWidth=4; c.strokeStyle=m?'#ff3b5b':'#3ddc84'; c.stroke();
+  c.fillStyle='#fff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m?'🔇':'🎤', w/2, h/2); });
+muteBtn.position.set(0.42,-0.32,-0.9); muteBtn.rotation.x=-0.5; camera.add(muteBtn);
+registerInteractable(muteBtn, ()=>{ toggleMute(); muteBtn.userData.redraw(); });
 // keep the in-world board in sync with the DOM HUD
 const _updateHUD = updateHUD;
 updateHUD = function(){ _updateHUD(); refreshStats(); };
@@ -520,6 +527,7 @@ const MP = {
   peer:null, isHost:false, conns:[], hostConn:null, id:null,
   myId: 'p'+Math.random().toString(36).slice(2,8),
   avatars:{}, // id -> {group, head, hands[], targets}
+  localStream:null, calls:{}, audioEls:{}, muted:false,
 };
 const avatarRoot = new THREE.Group(); scene.add(avatarRoot);
 const PLAYER_COLORS = [0xff5db1,0x5dd6ff,0xffd34d,0x3ddc84,0x9b5dff,0xff9b3d];
@@ -568,31 +576,79 @@ function handleMsg(data, conn){
   let m; try{ m=JSON.parse(data); }catch(e){ return; }
   if(m.t==='state'){ applyState(m.s); if(MP.isHost) broadcast({t:'state', s:m.s}, conn); }
   else if(m.t==='bigwin'){ log(`🌐 ${m.name||'Player'}: 🪙${m.amount} on ${m.game}`); if(MP.isHost) broadcast(m, conn); }
+  else if(m.t==='roster'){ applyRoster(m.ids); }
+}
+
+// ---------- Voice chat (WebRTC audio, full mesh) ----------
+async function initMic(){
+  if(MP.localStream) return MP.localStream;
+  try { MP.localStream = await navigator.mediaDevices.getUserMedia({ audio:{echoCancellation:true,noiseSuppression:true}, video:false });
+    log('🎤 Mic on — voice chat enabled.'); }
+  catch(e){ log('🎤 Mic blocked — playing without voice.'); MP.localStream=null; }
+  return MP.localStream;
+}
+function attachRemoteAudio(id, stream){
+  let el=MP.audioEls[id];
+  if(!el){ el=document.createElement('audio'); el.autoplay=true; el.dataset.peer=id; document.body.appendChild(el); MP.audioEls[id]=el; }
+  el.srcObject=stream; el.play().catch(()=>{});
+}
+function handleCall(call){
+  call.answer(MP.localStream || undefined);
+  call.on('stream', s=>attachRemoteAudio(call.peer, s));
+  call.on('close', ()=>{ if(MP.audioEls[call.peer]){ MP.audioEls[call.peer].remove(); delete MP.audioEls[call.peer]; } });
+  MP.calls[call.peer]=call;
+}
+function maybeCall(otherId){
+  if(!MP.peer || otherId===MP.peer.id) return;
+  if(MP.calls[otherId]) return;
+  // deterministic single initiator per pair
+  if(MP.peer.id < otherId){
+    const call=MP.peer.call(otherId, MP.localStream || undefined);
+    if(!call) return;
+    call.on('stream', s=>attachRemoteAudio(otherId, s));
+    call.on('close', ()=>{ if(MP.audioEls[otherId]){ MP.audioEls[otherId].remove(); delete MP.audioEls[otherId]; } });
+    MP.calls[otherId]=call;
+  }
+}
+function applyRoster(ids){ (ids||[]).forEach(maybeCall); }
+function broadcastRoster(){
+  if(!MP.isHost||!MP.peer) return;
+  const ids=[MP.peer.id, ...MP.conns.map(c=>c.peer)];
+  broadcast({t:'roster', ids}); applyRoster(ids);
+}
+function toggleMute(){
+  MP.muted=!MP.muted;
+  if(MP.localStream) MP.localStream.getAudioTracks().forEach(t=>t.enabled=!MP.muted);
+  log(MP.muted?'🔇 Muted':'🎤 Unmuted');
 }
 function mpBroadcastWin(amount, game){
   if(!MP.peer) return;
   const msg={t:'bigwin', amount, game, name:MP.myId};
   if(MP.isHost) broadcast(msg); else if(MP.hostConn&&MP.hostConn.open){ try{MP.hostConn.send(JSON.stringify(msg));}catch(e){} }
 }
-function hostRoom(code){
+async function hostRoom(code){
   if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); return; }
+  await initMic();
   MP.isHost=true; MP.id='casino-'+code;
   MP.peer=new Peer(MP.id);
-  MP.peer.on('open', ()=>{ setMpStatus('hosting "'+code+'"'); log('🌐 Hosting room "'+code+'". Share the code.'); });
+  MP.peer.on('open', ()=>{ setMpStatus('hosting "'+code+'" 🎤'); log('🌐 Hosting room "'+code+'". Share the code.'); });
+  MP.peer.on('call', handleCall);
   MP.peer.on('connection', conn=>{
-    conn.on('open', ()=>{ MP.conns.push(conn); setMpStatus('hosting "'+code+'" • '+(MP.conns.length+1)+' players'); log('🌐 A player joined.'); });
+    conn.on('open', ()=>{ MP.conns.push(conn); setMpStatus('hosting "'+code+'" • '+(MP.conns.length+1)+' players 🎤'); log('🌐 A player joined.'); broadcastRoster(); });
     conn.on('data', d=>handleMsg(d, conn));
-    conn.on('close', ()=>{ MP.conns=MP.conns.filter(c=>c!==conn); if(conn.peer) removeAvatar(conn.peer); });
+    conn.on('close', ()=>{ MP.conns=MP.conns.filter(c=>c!==conn); if(conn.peer){ removeAvatar(conn.peer); if(MP.audioEls[conn.peer]){MP.audioEls[conn.peer].remove(); delete MP.audioEls[conn.peer];} delete MP.calls[conn.peer]; } broadcastRoster(); });
   });
   MP.peer.on('error', e=>{ log('🌐 Host error: '+e.type); setMpStatus('error'); });
 }
-function joinRoom(code){
+async function joinRoom(code){
   if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); return; }
+  await initMic();
   MP.isHost=false; MP.peer=new Peer();
+  MP.peer.on('call', handleCall);
   MP.peer.on('open', ()=>{
     const conn=MP.peer.connect('casino-'+code, {reliable:false});
     MP.hostConn=conn;
-    conn.on('open', ()=>{ setMpStatus('joined "'+code+'"'); log('🌐 Connected to room "'+code+'".'); });
+    conn.on('open', ()=>{ setMpStatus('joined "'+code+'" 🎤'); log('🌐 Connected to room "'+code+'".'); });
     conn.on('data', d=>handleMsg(d, conn));
     conn.on('close', ()=>{ setMpStatus('disconnected'); log('🌐 Lost connection to host.'); });
   });
@@ -639,7 +695,7 @@ function locomotion(dt){
 // DESKTOP FALLBACK (no headset)
 // ==================================================================
 const keys={};
-addEventListener('keydown',e=>keys[e.code]=true); addEventListener('keyup',e=>keys[e.code]=false);
+addEventListener('keydown',e=>{ keys[e.code]=true; if(e.code==='KeyM'){ toggleMute(); muteBtn.userData.redraw(); } }); addEventListener('keyup',e=>keys[e.code]=false);
 let yaw=0,pitch=0, pointerLocked=false;
 renderer.domElement.addEventListener('click', ()=>{
   if(renderer.xr.isPresenting) return;
