@@ -68,7 +68,7 @@ load();
 
 // ---------- Discord webhook ----------
 // Paste your Discord webhook URL between the quotes to enable high-payout pings.
-const DISCORD_WEBHOOK_URL = '';
+const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1513324557220708513/W9UayWH6rKptEtgwk6TDllmwNG0B9b1YnBWUDid0QQ6GEYRIolE2R85B3z-yg28WMOnE';
 const BIG_WIN_THRESHOLD = 500; // a win >= this many tokens triggers a Discord notification
 function notifyDiscord(amount, game){
   if(!DISCORD_WEBHOOK_URL) return;
