@@ -191,6 +191,26 @@ const pulses=[];
 function pulse(mesh,color){ pulses.push({mesh,t:0,color:new THREE.Color(color)}); }
 
 // ==================================================================
+// STATS PANEL — small in-world board (HUD is invisible in VR)
+// ==================================================================
+const statsPanel = makePanel(0.9,0.5,(c,w,h)=>{
+  c.fillStyle='rgba(8,10,20,0.92)'; roundRect(c,2,2,w-4,h-4,22); c.fill();
+  c.lineWidth=4; c.strokeStyle='#2a2f55'; c.stroke();
+  c.textAlign='left'; c.textBaseline='middle';
+  c.fillStyle='#ffd34d'; c.font='bold 48px Segoe UI';
+  c.fillText('🪙 '+Math.floor(S.tokens).toLocaleString(), 26, 56);
+  c.font='30px Segoe UI'; c.fillStyle='#3ddc84'; c.fillText('🍀 Luck Lv'+S.luckLv, 26, 130);
+  c.fillStyle='#ffd34d'; c.fillText('💰 Payout x'+payMul().toFixed(1), 26, 178);
+  c.fillStyle='#ff5db1'; c.fillText('💥 Crit '+(critChance()*100|0)+'%', 270, 130);
+  c.fillStyle='#ff9b3d'; c.fillText('⚙️ '+S.autoLv+'/s', 270, 178);
+});
+statsPanel.position.set(0,-0.35,-0.9); statsPanel.rotation.x=-0.5; camera.add(statsPanel); // follows your view
+function refreshStats(){ statsPanel.userData.redraw(); }
+// keep the in-world board in sync with the DOM HUD
+const _updateHUD = updateHUD;
+updateHUD = function(){ _updateHUD(); refreshStats(); };
+
+// ==================================================================
 // SLOT MACHINE
 // ==================================================================
 const SYMS = ['🍒','🍋','🔔','⭐','💎','7️⃣'];
