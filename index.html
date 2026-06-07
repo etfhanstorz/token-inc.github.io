@@ -61,6 +61,7 @@ const S = {
   slotLuckLv: 1,
   plinkoLv: 1,
   critLv: 0,        // chance to multiply a win
+  topWins: [],      // leaderboard of highest single payouts ever (desc)
 };
 const save = () => localStorage.setItem('tokenCasino', JSON.stringify(S));
 const load = () => { try { Object.assign(S, JSON.parse(localStorage.getItem('tokenCasino')||'{}')); } catch(e){} };
@@ -69,16 +70,29 @@ load();
 // ---------- Discord webhook ----------
 // Paste your Discord webhook URL between the quotes to enable high-payout pings.
 const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1513324557220708513/W9UayWH6rKptEtgwk6TDllmwNG0B9b1YnBWUDid0QQ6GEYRIolE2R85B3z-yg28WMOnE';
-const BIG_WIN_THRESHOLD = 500; // a win >= this many tokens triggers a Discord notification
-function notifyDiscord(amount, game){
+const LEADERBOARD_SIZE = 10; // a win that ranks in the top N highest payouts ever triggers a ping
+function notifyDiscord(amount, game, rank){
   if(!DISCORD_WEBHOOK_URL) return;
   try {
+    const medal = rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'🏅';
     const fd = new FormData();
-    fd.append('content', `🎉 **Big payout!** Someone just hit **🪙 ${amount.toLocaleString()}** on **${game}** (Luck Lv${S.luckLv}, Payout x${payMul().toFixed(1)}).`);
+    fd.append('content', `${medal} **Top-${LEADERBOARD_SIZE} payout!** Someone just hit **🪙 ${amount.toLocaleString()}** on **${game}** — that's the **#${rank} highest payout ever** (Luck Lv${S.luckLv}, Payout x${payMul().toFixed(1)}).`);
     fetch(DISCORD_WEBHOOK_URL, { method:'POST', mode:'no-cors', body: fd });
   } catch(e){ /* fire-and-forget */ }
 }
-function reportWin(amount, game){ if(amount >= BIG_WIN_THRESHOLD) notifyDiscord(amount, game); }
+// Trigger if this win is good enough to make the all-time top-N leaderboard.
+function reportWin(amount, game){
+  if(amount<=0) return;
+  const board = S.topWins || (S.topWins=[]);
+  const qualifies = board.length < LEADERBOARD_SIZE || amount > board[board.length-1];
+  if(!qualifies) return;
+  board.push(amount);
+  board.sort((a,b)=>b-a);
+  if(board.length>LEADERBOARD_SIZE) board.length=LEADERBOARD_SIZE;
+  const rank = board.indexOf(amount)+1;
+  save();
+  notifyDiscord(amount, game, rank);
+}
 
 const luckBonus = () => 1 + (S.luckLv-1)*0.04;            // multiplier on win chance
 const payMul    = () => 1 + (S.payLv-1)*0.35;             // payout multiplier
