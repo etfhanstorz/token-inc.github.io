@@ -20,11 +20,18 @@
   button.start { font-size:20px; padding:14px 40px; border:none; border-radius:30px; cursor:pointer; font-weight:700;
     background:linear-gradient(90deg,#ffd34d,#ff5db1); color:#1a0b2e; box-shadow:0 8px 30px rgba(255,93,177,.4); }
   button.start:active { transform:scale(.97); }
+  #crosshair { position:fixed; top:50%; left:50%; width:22px; height:22px; margin:-11px 0 0 -11px; z-index:6;
+    pointer-events:none; display:none; }
+  #crosshair::before, #crosshair::after { content:''; position:absolute; background:rgba(255,255,255,.85);
+    box-shadow:0 0 4px rgba(0,0,0,.8); }
+  #crosshair::before { left:50%; top:0; width:2px; height:100%; margin-left:-1px; }
+  #crosshair::after { top:50%; left:0; height:2px; width:100%; margin-top:-1px; }
 </style>
 </head>
 <body>
 <div id="hud">🪙 <span id="tok">0</span> tokens &nbsp;|&nbsp; 🍀 Luck Lv<span id="luckLv">1</span> &nbsp;|&nbsp; 💰 Payout x<span id="payMul">1.0</span></div>
 <div id="log"></div>
+<div id="crosshair"></div>
 <div id="overlay">
   <h1>TOKEN CASINO VR</h1>
   <p>Step into the VR casino. Tap the machines with your hands or trigger to gamble. Buy upgrades on the glowing wall to boost your luck and payouts. <b>Thumbstick to move.</b></p>
@@ -545,8 +552,12 @@ const overlay=document.getElementById('overlay');
 const enterBtn=document.getElementById('enterBtn');
 // hidden real VR button
 const vrBtn=VRButton.createButton(renderer); vrBtn.style.display='none'; document.body.appendChild(vrBtn);
+const crosshairEl=document.getElementById('crosshair');
+renderer.xr.addEventListener('sessionstart', ()=>{ crosshairEl.style.display='none'; });
+renderer.xr.addEventListener('sessionend', ()=>{ crosshairEl.style.display='block'; });
 enterBtn.addEventListener('click', ()=>{
   overlay.style.display='none';
+  crosshairEl.style.display='block';
   if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }); }
   else log('Desktop mode. Click to look/interact, WASD to move.');
 });
