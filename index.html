@@ -38,8 +38,17 @@
   <button class="start" id="enterBtn">Enter VR</button>
   <p class="info">No VR headset? Click "Enter VR" anyway to play in desktop fallback (WASD + mouse-look, click to interact).<br>
   Left stick = move • Right stick = snap turn • Trigger/click = interact</p>
+  <div style="margin-top:18px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+    <input id="roomInput" placeholder="room code" maxlength="16"
+      style="padding:10px 14px; border-radius:14px; border:1px solid #2a2f55; background:#0c0e1f; color:#fff; font-size:15px; width:140px; text-align:center;">
+    <button id="hostBtn" style="padding:10px 18px; border:none; border-radius:14px; cursor:pointer; font-weight:700; background:#3ddc84; color:#06210f;">Host</button>
+    <button id="joinBtn" style="padding:10px 18px; border:none; border-radius:14px; cursor:pointer; font-weight:700; background:#5dd6ff; color:#06210f;">Join</button>
+    <span id="mpStatus" style="color:#7d86ab; font-size:13px;">solo</span>
+  </div>
+  <p class="info" style="margin-top:6px;">Multiplayer (up to ~5): one person clicks <b>Host</b>, shares the room code; others type it and click <b>Join</b>, then everyone clicks Enter VR.</p>
 </div>
 
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -92,6 +101,7 @@ function reportWin(amount, game){
   const rank = board.indexOf(amount)+1;
   save();
   notifyDiscord(amount, game, rank);
+  if(typeof mpBroadcastWin==='function') mpBroadcastWin(amount, game);
 }
 
 const luckBonus = () => 1 + (S.luckLv-1)*0.04;            // multiplier on win chance
@@ -504,6 +514,103 @@ function updateHover(){
 }
 
 // ==================================================================
+// MULTIPLAYER (PeerJS, star topology — host relays to ~5 peers)
+// ==================================================================
+const MP = {
+  peer:null, isHost:false, conns:[], hostConn:null, id:null,
+  myId: 'p'+Math.random().toString(36).slice(2,8),
+  avatars:{}, // id -> {group, head, hands[], targets}
+};
+const avatarRoot = new THREE.Group(); scene.add(avatarRoot);
+const PLAYER_COLORS = [0xff5db1,0x5dd6ff,0xffd34d,0x3ddc84,0x9b5dff,0xff9b3d];
+function colorFor(id){ let h=0; for(const c of id) h=(h*31+c.charCodeAt(0))>>>0; return PLAYER_COLORS[h%PLAYER_COLORS.length]; }
+
+function makeAvatar(id){
+  const g=new THREE.Group(); const col=colorFor(id);
+  const mat=new THREE.MeshStandardMaterial({color:col, emissive:col, emissiveIntensity:0.3});
+  const head=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.24,0.26), mat); g.add(head);
+  // visor
+  const visor=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.07,0.02), new THREE.MeshStandardMaterial({color:0x05060a}));
+  visor.position.set(0,0.02,0.13); head.add(visor);
+  const hands=[0,1].map(()=>{ const h=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.12), mat); g.add(h); return h; });
+  avatarRoot.add(g);
+  const a={ group:g, head, hands, t:{ head:{p:new THREE.Vector3(),q:new THREE.Quaternion()}, hands:[{p:new THREE.Vector3(),q:new THREE.Quaternion()},{p:new THREE.Vector3(),q:new THREE.Quaternion()}] } };
+  MP.avatars[id]=a; return a;
+}
+function removeAvatar(id){ const a=MP.avatars[id]; if(a){ avatarRoot.remove(a.group); delete MP.avatars[id]; } }
+
+function setMpStatus(t){ const el=document.getElementById('mpStatus'); if(el) el.textContent=t; }
+
+function localState(){
+  // world transforms of head + hands
+  const hp=new THREE.Vector3(), hq=new THREE.Quaternion(), s=new THREE.Vector3();
+  camera.matrixWorld.decompose(hp,hq,s);
+  const hands=controllers.map(c=>{ const p=new THREE.Vector3(),q=new THREE.Quaternion(); c.matrixWorld.decompose(p,q,s); return {p:[p.x,p.y,p.z],q:[q.x,q.y,q.z,q.w]}; });
+  return { id:MP.myId, head:{p:[hp.x,hp.y,hp.z],q:[hq.x,hq.y,hq.z,hq.w]}, hands };
+}
+function applyState(st){
+  if(st.id===MP.myId) return;
+  const a=MP.avatars[st.id]||makeAvatar(st.id);
+  a.t.head.p.fromArray(st.head.p); a.t.head.q.fromArray(st.head.q);
+  (st.hands||[]).forEach((h,i)=>{ if(a.t.hands[i]){ a.t.hands[i].p.fromArray(h.p); a.t.hands[i].q.fromArray(h.q); } });
+  a.lastSeen=performance.now();
+}
+function broadcast(obj, exceptConn){
+  const msg=JSON.stringify(obj);
+  for(const c of MP.conns){ if(c!==exceptConn && c.open) try{ c.send(msg); }catch(e){} }
+}
+function sendState(){
+  if(!MP.peer) return; const st=localState();
+  if(MP.isHost){ broadcast({t:'state', s:st}); }
+  else if(MP.hostConn && MP.hostConn.open){ try{ MP.hostConn.send(JSON.stringify({t:'state', s:st})); }catch(e){} }
+}
+function handleMsg(data, conn){
+  let m; try{ m=JSON.parse(data); }catch(e){ return; }
+  if(m.t==='state'){ applyState(m.s); if(MP.isHost) broadcast({t:'state', s:m.s}, conn); }
+  else if(m.t==='bigwin'){ log(`🌐 ${m.name||'Player'}: 🪙${m.amount} on ${m.game}`); if(MP.isHost) broadcast(m, conn); }
+}
+function mpBroadcastWin(amount, game){
+  if(!MP.peer) return;
+  const msg={t:'bigwin', amount, game, name:MP.myId};
+  if(MP.isHost) broadcast(msg); else if(MP.hostConn&&MP.hostConn.open){ try{MP.hostConn.send(JSON.stringify(msg));}catch(e){} }
+}
+function hostRoom(code){
+  if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); return; }
+  MP.isHost=true; MP.id='casino-'+code;
+  MP.peer=new Peer(MP.id);
+  MP.peer.on('open', ()=>{ setMpStatus('hosting "'+code+'"'); log('🌐 Hosting room "'+code+'". Share the code.'); });
+  MP.peer.on('connection', conn=>{
+    conn.on('open', ()=>{ MP.conns.push(conn); setMpStatus('hosting "'+code+'" • '+(MP.conns.length+1)+' players'); log('🌐 A player joined.'); });
+    conn.on('data', d=>handleMsg(d, conn));
+    conn.on('close', ()=>{ MP.conns=MP.conns.filter(c=>c!==conn); if(conn.peer) removeAvatar(conn.peer); });
+  });
+  MP.peer.on('error', e=>{ log('🌐 Host error: '+e.type); setMpStatus('error'); });
+}
+function joinRoom(code){
+  if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); return; }
+  MP.isHost=false; MP.peer=new Peer();
+  MP.peer.on('open', ()=>{
+    const conn=MP.peer.connect('casino-'+code, {reliable:false});
+    MP.hostConn=conn;
+    conn.on('open', ()=>{ setMpStatus('joined "'+code+'"'); log('🌐 Connected to room "'+code+'".'); });
+    conn.on('data', d=>handleMsg(d, conn));
+    conn.on('close', ()=>{ setMpStatus('disconnected'); log('🌐 Lost connection to host.'); });
+  });
+  MP.peer.on('error', e=>{ log('🌐 Join error: '+e.type+(e.type==='peer-unavailable'?' (no such room)':'')); setMpStatus('error'); });
+}
+let mpSendAccum=0;
+function mpUpdate(dt){
+  if(!MP.peer) return;
+  mpSendAccum+=dt; if(mpSendAccum>=0.066){ sendState(); mpSendAccum=0; } // ~15Hz
+  const now=performance.now();
+  for(const id in MP.avatars){ const a=MP.avatars[id];
+    if(a.lastSeen && now-a.lastSeen>5000){ removeAvatar(id); continue; }
+    a.head.position.lerp(a.t.head.p, 0.3); a.head.quaternion.slerp(a.t.head.q, 0.3);
+    a.hands.forEach((h,i)=>{ h.position.lerp(a.t.hands[i].p,0.3); h.quaternion.slerp(a.t.hands[i].q,0.3); });
+  }
+}
+
+// ==================================================================
 // LOCOMOTION (thumbstick)
 // ==================================================================
 let snapCooldown=0;
@@ -562,7 +669,7 @@ let autoAccum=0;
 const clock=new THREE.Clock();
 function animate(){
   const dt=Math.min(0.05,clock.getDelta());
-  locomotion(dt); desktopControls(dt); updateHover(); stepBalls(dt); stepWheel(dt);
+  locomotion(dt); desktopControls(dt); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt);
   // passive income
   if(S.autoLv>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum); addTokens(S.autoLv*g*Math.max(1,Math.floor(payMul()))); autoAccum-=g; save(); } }
   // pulses
@@ -589,6 +696,17 @@ enterBtn.addEventListener('click', ()=>{
   if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }); }
   else log('Desktop mode. Click to look/interact, WASD to move.');
 });
+// Multiplayer buttons
+const roomInput=document.getElementById('roomInput');
+document.getElementById('hostBtn').addEventListener('click', ()=>{
+  const code=(roomInput.value||'').trim().toLowerCase().replace(/[^a-z0-9-]/g,'') || Math.random().toString(36).slice(2,7);
+  roomInput.value=code; hostRoom(code);
+});
+document.getElementById('joinBtn').addEventListener('click', ()=>{
+  const code=(roomInput.value||'').trim().toLowerCase().replace(/[^a-z0-9-]/g,'');
+  if(!code){ setMpStatus('enter a code first'); return; } joinRoom(code);
+});
+
 log('Welcome! Earn tokens, buy upgrades, gamble it all.');
 refreshUpgrades();
 </script>
