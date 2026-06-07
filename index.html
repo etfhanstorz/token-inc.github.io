@@ -626,24 +626,29 @@ function mpBroadcastWin(amount, game){
   const msg={t:'bigwin', amount, game, name:MP.myId};
   if(MP.isHost) broadcast(msg); else if(MP.hostConn&&MP.hostConn.open){ try{MP.hostConn.send(JSON.stringify(msg));}catch(e){} }
 }
-async function hostRoom(code){
-  if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); return; }
-  await initMic();
+function hostRoom(code){
+  if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); setMpStatus('lib error'); return; }
+  if(MP.peer){ try{ MP.peer.destroy(); }catch(e){} MP.peer=null; MP.conns=[]; }
+  initMic(); // start mic in background; don't block hosting on the permission dialog
   MP.isHost=true; MP.id='casino-'+code;
+  setMpStatus('connecting…');
   MP.peer=new Peer(MP.id);
-  MP.peer.on('open', ()=>{ setMpStatus('hosting "'+code+'" 🎤'); log('🌐 Hosting room "'+code+'". Share the code.'); });
+  MP.peer.on('open', id=>{ setMpStatus('hosting "'+code+'" 🎤'); log('🌐 Hosting room "'+code+'" (id '+id+'). Share the code.'); });
   MP.peer.on('call', handleCall);
   MP.peer.on('connection', conn=>{
     conn.on('open', ()=>{ MP.conns.push(conn); setMpStatus('hosting "'+code+'" • '+(MP.conns.length+1)+' players 🎤'); log('🌐 A player joined.'); broadcastRoster(); });
     conn.on('data', d=>handleMsg(d, conn));
     conn.on('close', ()=>{ MP.conns=MP.conns.filter(c=>c!==conn); if(conn.peer){ removeAvatar(conn.peer); if(MP.audioEls[conn.peer]){MP.audioEls[conn.peer].remove(); delete MP.audioEls[conn.peer];} delete MP.calls[conn.peer]; } broadcastRoster(); });
   });
-  MP.peer.on('error', e=>{ log('🌐 Host error: '+e.type); setMpStatus('error'); });
+  MP.peer.on('error', e=>{ console.error('PeerJS host error', e); const t=e.type||'error';
+    log('🌐 Host error: '+t+(t==='unavailable-id'?' (room code in use — pick another or wait ~30s)':''));
+    setMpStatus('error: '+t); });
 }
-async function joinRoom(code){
-  if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); return; }
-  await initMic();
-  MP.isHost=false; MP.peer=new Peer();
+function joinRoom(code){
+  if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); setMpStatus('lib error'); return; }
+  if(MP.peer){ try{ MP.peer.destroy(); }catch(e){} MP.peer=null; }
+  initMic();
+  MP.isHost=false; setMpStatus('connecting…'); MP.peer=new Peer();
   MP.peer.on('call', handleCall);
   MP.peer.on('open', ()=>{
     const conn=MP.peer.connect('casino-'+code, {reliable:false});
@@ -652,7 +657,9 @@ async function joinRoom(code){
     conn.on('data', d=>handleMsg(d, conn));
     conn.on('close', ()=>{ setMpStatus('disconnected'); log('🌐 Lost connection to host.'); });
   });
-  MP.peer.on('error', e=>{ log('🌐 Join error: '+e.type+(e.type==='peer-unavailable'?' (no such room)':'')); setMpStatus('error'); });
+  MP.peer.on('error', e=>{ console.error('PeerJS join error', e); const t=e.type||'error';
+    log('🌐 Join error: '+t+(t==='peer-unavailable'?' (no host with that code yet)':''));
+    setMpStatus('error: '+t); });
 }
 let mpSendAccum=0;
 function mpUpdate(dt){
