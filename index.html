@@ -66,6 +66,20 @@ const save = () => localStorage.setItem('tokenCasino', JSON.stringify(S));
 const load = () => { try { Object.assign(S, JSON.parse(localStorage.getItem('tokenCasino')||'{}')); } catch(e){} };
 load();
 
+// ---------- Discord webhook ----------
+// Paste your Discord webhook URL between the quotes to enable high-payout pings.
+const DISCORD_WEBHOOK_URL = '';
+const BIG_WIN_THRESHOLD = 500; // a win >= this many tokens triggers a Discord notification
+function notifyDiscord(amount, game){
+  if(!DISCORD_WEBHOOK_URL) return;
+  try {
+    const fd = new FormData();
+    fd.append('content', `🎉 **Big payout!** Someone just hit **🪙 ${amount.toLocaleString()}** on **${game}** (Luck Lv${S.luckLv}, Payout x${payMul().toFixed(1)}).`);
+    fetch(DISCORD_WEBHOOK_URL, { method:'POST', mode:'no-cors', body: fd });
+  } catch(e){ /* fire-and-forget */ }
+}
+function reportWin(amount, game){ if(amount >= BIG_WIN_THRESHOLD) notifyDiscord(amount, game); }
+
 const luckBonus = () => 1 + (S.luckLv-1)*0.04;            // multiplier on win chance
 const payMul    = () => 1 + (S.payLv-1)*0.35;             // payout multiplier
 const critChance= () => Math.min(0.5, S.critLv*0.03);
@@ -268,7 +282,7 @@ function resolveSlots(r){
   else if(r[0]===r[1]||r[1]===r[2]||r[0]===r[2]){ const s = r[0]===r[1]?r[0]:(r[1]===r[2]?r[1]:r[0]); win = SYM_PAY[s]; }
   win = Math.floor(win*payMul());
   if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
-  if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${win}`); pulse(slotScreen,0xffd34d); }
+  if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${win}`); pulse(slotScreen,0xffd34d); reportWin(win,'Slots'); }
   else log(`🎰 ${r.join(' ')} → no win`);
   save(); refreshUpgrades();
 }
@@ -317,7 +331,7 @@ function stepBalls(dt){
       let idx=Math.round(b.position.x/0.36 + (PLINKO_MULT.length-1)/2); idx=Math.max(0,Math.min(PLINKO_MULT.length-1,idx));
       let win=Math.floor(20*PLINKO_MULT[idx]*payMul());
       if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
-      addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${win}`); pulse(plabels[idx],0xffd34d);
+      addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${win}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko');
       plinkoGroup.remove(b); balls.splice(i,1); save(); refreshUpgrades();
     }
   }
@@ -362,7 +376,7 @@ function scratchAt(hit){
     const counts={}; scratchState.cells.forEach(v=>counts[v]=(counts[v]||0)+1);
     let win=0; for(const v in counts){ if(counts[v]>=3 && +v>0) win+=(+v)*counts[v]; }
     if(win===0) win=Math.floor(Math.max(...scratchState.cells)*0.2);
-    addTokens(win); log(`🎟️ Ticket → +${win}`); pulse(scratchPanel,0x3ddc84); save(); refreshUpgrades();
+    addTokens(win); log(`🎟️ Ticket → +${win}`); pulse(scratchPanel,0x3ddc84); reportWin(win,'Scratcher'); save(); refreshUpgrades();
   }
 }
 function drawScratch(ctx,w,h){
@@ -410,7 +424,7 @@ function stepWheel(dt){
   if(!wheelSpin) return; wheelSpin.t+=dt; const p=Math.min(1,wheelSpin.t/wheelSpin.dur); const e=1-Math.pow(1-p,3);
   wheelDisc.rotation.z = wheelSpin.from+(wheelSpin.to-wheelSpin.from)*e;
   if(p>=1){ const m=WHEEL_SEGMENTS[wheelSpin.seg]; let win=Math.floor(30*m*payMul()); if(win>0&&Math.random()<critChance()){win*=5;log('💥 CRIT!');}
-    if(win>0){ addTokens(win); log(`🎡 ${m}x → +${win}`); pulse(wheelDisc,0xffd34d);} else log('🎡 Lost the spin');
+    if(win>0){ addTokens(win); log(`🎡 ${m}x → +${win}`); pulse(wheelDisc,0xffd34d); reportWin(win,'Wheel');} else log('🎡 Lost the spin');
     wheelSpin=null; save(); refreshUpgrades(); }
 }
 
@@ -432,7 +446,7 @@ cashBtn.position.set(0,0.65,0); diceGroup.add(cashBtn);
 registerInteractable(betBtn, ()=>{ if(dicePot>0){log('Resolve current pot first');return;} if(S.tokens<25){log('Need 🪙25');return;} addTokens(-25); dicePot=25; diceDisp.userData.redraw(); log('🎲 Pot started at 25. Double or cash.'); save(); });
 registerInteractable(flipBtn, ()=>{ if(dicePot<=0){log('Place a bet first');return;}
   const winP=0.5*Math.min(1.3,luckBonus()); if(Math.random()<winP){ dicePot=Math.floor(dicePot*2); log('🎲 Won! Pot doubled to '+dicePot); pulse(diceDisp,0x3ddc84);} else { log('🎲 Busted! Lost pot.'); dicePot=0; pulse(diceDisp,0xff3b5b);} diceDisp.userData.redraw(); save(); });
-registerInteractable(cashBtn, ()=>{ if(dicePot<=0){log('Nothing to cash');return;} addTokens(dicePot); log('🎲 Cashed out 🪙'+dicePot); dicePot=0; diceDisp.userData.redraw(); save(); refreshUpgrades(); });
+registerInteractable(cashBtn, ()=>{ if(dicePot<=0){log('Nothing to cash');return;} addTokens(dicePot); log('🎲 Cashed out 🪙'+dicePot); reportWin(dicePot,'Double-or-Nothing'); dicePot=0; diceDisp.userData.redraw(); save(); refreshUpgrades(); });
 
 // ==================================================================
 // CONTROLLERS + RAY INTERACTION
