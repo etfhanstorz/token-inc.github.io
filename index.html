@@ -104,6 +104,8 @@ function reportWin(amount, game){
   if(typeof mpBroadcastWin==='function') mpBroadcastWin(amount, game);
 }
 
+const VOICE = { muted:false };   // hoist-safe mute state (used by the mute button drawn before MP exists)
+
 const luckBonus = () => 1 + (S.luckLv-1)*0.04;            // multiplier on win chance
 const payMul    = () => 1 + (S.payLv-1)*0.35;             // payout multiplier
 const critChance= () => Math.min(0.5, S.critLv*0.03);
@@ -252,7 +254,7 @@ const statsPanel = makePanel(0.9,0.5,(c,w,h)=>{
 statsPanel.position.set(0,-0.35,-0.9); statsPanel.rotation.x=-0.5; camera.add(statsPanel); // follows your view
 function refreshStats(){ statsPanel.userData.redraw(); }
 // mic mute toggle, tappable in VR (follows your view)
-const muteBtn = makePanel(0.28,0.18,(c,w,h)=>{ c.clearRect(0,0,w,h); const m=(typeof MP!=='undefined'&&MP.muted);
+const muteBtn = makePanel(0.28,0.18,(c,w,h)=>{ c.clearRect(0,0,w,h); const m=VOICE.muted;
   c.fillStyle=m?'rgba(60,12,20,0.92)':'rgba(8,20,12,0.92)'; roundRect(c,2,2,w-4,h-4,18); c.fill();
   c.lineWidth=4; c.strokeStyle=m?'#ff3b5b':'#3ddc84'; c.stroke();
   c.fillStyle='#fff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m?'🔇':'🎤', w/2, h/2); });
@@ -617,9 +619,9 @@ function broadcastRoster(){
   broadcast({t:'roster', ids}); applyRoster(ids);
 }
 function toggleMute(){
-  MP.muted=!MP.muted;
-  if(MP.localStream) MP.localStream.getAudioTracks().forEach(t=>t.enabled=!MP.muted);
-  log(MP.muted?'🔇 Muted':'🎤 Unmuted');
+  VOICE.muted=!VOICE.muted; MP.muted=VOICE.muted;
+  if(MP.localStream) MP.localStream.getAudioTracks().forEach(t=>t.enabled=!VOICE.muted);
+  log(VOICE.muted?'🔇 Muted':'🎤 Unmuted');
 }
 function mpBroadcastWin(amount, game){
   if(!MP.peer) return;
