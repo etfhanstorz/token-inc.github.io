@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Token Casino VR</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; overflow:hidden; background:#05060a; font-family:'Segoe UI',system-ui,sans-serif; color:#fff; }
+  #overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 50% 30%, #1a1140, #05060a 70%); z-index:10; text-align:center; padding:24px; }
+  #overlay h1 { font-size:42px; letter-spacing:2px; background:linear-gradient(90deg,#ffd34d,#ff5db1,#5dd6ff);
+    -webkit-background-clip:text; background-clip:text; color:transparent; margin-bottom:8px; }
+  #overlay p { color:#9aa3c0; max-width:560px; line-height:1.5; margin-bottom:18px; }
+  .info { font-size:13px; color:#6b7396; max-width:560px; }
+  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:5; font-weight:700;
+    background:rgba(10,12,24,.6); padding:8px 18px; border-radius:20px; border:1px solid #2a2f55; }
+  #hud span { color:#ffd34d; }
+  #log { position:fixed; bottom:10px; left:10px; z-index:5; font-size:12px; color:#7d86ab; max-width:40vw; }
+  button.start { font-size:20px; padding:14px 40px; border:none; border-radius:30px; cursor:pointer; font-weight:700;
+    background:linear-gradient(90deg,#ffd34d,#ff5db1); color:#1a0b2e; box-shadow:0 8px 30px rgba(255,93,177,.4); }
+  button.start:active { transform:scale(.97); }
+</style>
+</head>
+<body>
+<div id="hud">🪙 <span id="tok">0</span> tokens &nbsp;|&nbsp; 🍀 Luck Lv<span id="luckLv">1</span> &nbsp;|&nbsp; 💰 Payout x<span id="payMul">1.0</span></div>
+<div id="log"></div>
+<div id="overlay">
+  <h1>TOKEN CASINO VR</h1>
+  <p>Step into the VR casino. Tap the machines with your hands or trigger to gamble. Buy upgrades on the glowing wall to boost your luck and payouts. <b>Thumbstick to move.</b></p>
+  <button class="start" id="enterBtn">Enter VR</button>
+  <p class="info">No VR headset? Click "Enter VR" anyway to play in desktop fallback (WASD + mouse-look, click to interact).<br>
+  Left stick = move • Right stick = snap turn • Trigger/click = interact</p>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+
+// ---------- State ----------
+const S = {
+  tokens: 100,
+  luckLv: 1,        // increases win chance
+  payLv: 1,         // payout multiplier level
+  autoLv: 0,        // passive income per second
+  slotLuckLv: 1,
+  plinkoLv: 1,
+  critLv: 0,        // chance to multiply a win
+};
+const save = () => localStorage.setItem('tokenCasino', JSON.stringify(S));
+const load = () => { try { Object.assign(S, JSON.parse(localStorage.getItem('tokenCasino')||'{}')); } catch(e){} };
+load();
+
+const luckBonus = () => 1 + (S.luckLv-1)*0.04;            // multiplier on win chance
+const payMul    = () => 1 + (S.payLv-1)*0.35;             // payout multiplier
+const critChance= () => Math.min(0.5, S.critLv*0.03);
+
+// ---------- HUD ----------
+const tokEl = document.getElementById('tok');
+const luckEl = document.getElementById('luckLv');
+const payEl = document.getElementById('payMul');
+const logEl = document.getElementById('log');
+let logLines = [];
+function log(msg){ logLines.push(msg); if(logLines.length>4) logLines.shift(); logEl.innerHTML = logLines.join('<br>'); }
+function updateHUD(){ tokEl.textContent = Math.floor(S.tokens).toLocaleString(); luckEl.textContent=S.luckLv; payEl.textContent=payMul().toFixed(1); }
+function addTokens(n){ S.tokens += n; updateHUD(); }
+updateHUD();
+
+// ---------- Three setup ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05060a);
+scene.fog = new THREE.Fog(0x05060a, 12, 40);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.05, 200);
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+renderer.domElement.style.position='fixed'; renderer.domElement.style.inset='0';
+
+// Player rig (move this for locomotion)
+const rig = new THREE.Group();
+rig.add(camera);
+camera.position.set(0,1.6,0);
+scene.add(rig);
+rig.position.set(0,0,4);
+
+// Lights
+scene.add(new THREE.HemisphereLight(0x8899ff, 0x221133, 0.7));
+const key = new THREE.DirectionalLight(0xffffff, 0.8);
+key.position.set(5,10,5); key.castShadow=true; scene.add(key);
+function neon(x,y,z,c){ const l=new THREE.PointLight(c,1.4,18); l.position.set(x,y,z); scene.add(l); return l; }
+neon(-6,4,-6,0xff5db1); neon(6,4,-6,0x5dd6ff); neon(0,5,-10,0xffd34d); neon(0,4,6,0x9b5dff);
+
+// Floor
+const floorGeo = new THREE.PlaneGeometry(60,60);
+const floorMat = new THREE.MeshStandardMaterial({ color:0x0a0c1a, metalness:0.6, roughness:0.4 });
+const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
+const grid = new THREE.GridHelper(60,60,0x2a2f55,0x161a30); grid.position.y=0.01; scene.add(grid);
+
+// ---------- Interactables ----------
+const interactables = []; // {mesh, onTap, hover()}
+function registerInteractable(mesh, onTap){ mesh.userData.onTap = onTap; interactables.push(mesh); }
+
+// ---------- Canvas-texture helper for 2D blocks ----------
+function makePanel(w,h,draw){
+  const cw=512, ch=Math.round(512*h/w);
+  const canvas=document.createElement('canvas'); canvas.width=cw; canvas.height=ch;
+  const ctx=canvas.getContext('2d');
+  const tex=new THREE.CanvasTexture(canvas); tex.anisotropy=4;
+  const mat=new THREE.MeshBasicMaterial({ map:tex, transparent:true });
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h), mat);
+  mesh.userData.redraw = ()=>{ draw(ctx,cw,ch); tex.needsUpdate=true; };
+  mesh.userData.redraw();
+  return mesh;
+}
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+// ==================================================================
+// UPGRADE WALL — 2D blocks you tap with your hands
+// ==================================================================
+const upgradeDefs = [
+  { key:'luckLv',   name:'LUCK',      icon:'🍀', color:'#3ddc84', base:50,  grow:1.5, desc:()=>'Win chance +4%' },
+  { key:'payLv',    name:'PAYOUT',    icon:'💰', color:'#ffd34d', base:75,  grow:1.55,desc:()=>'Payouts +35%' },
+  { key:'critLv',   name:'CRIT',      icon:'💥', color:'#ff5db1', base:120, grow:1.7, desc:()=>'+3% chance to 5x a win' },
+  { key:'slotLuckLv',name:'SLOT ODDS',icon:'🎰', color:'#5dd6ff', base:90,  grow:1.6, desc:()=>'Better slot symbols' },
+  { key:'plinkoLv', name:'PLINKO',    icon:'🔵', color:'#9b5dff', base:90,  grow:1.6, desc:()=>'Higher plinko slots' },
+  { key:'autoLv',   name:'AUTO',      icon:'⚙️', color:'#ff9b3d', base:200, grow:1.8, desc:()=>'+1 token/sec passive' },
+];
+function upCost(def){ const lv=S[def.key]||0; return Math.floor(def.base*Math.pow(def.grow, def.key==='autoLv'||def.key==='critLv'?lv:(lv-1))); }
+
+const wall = new THREE.Group();
+wall.position.set(-7.5, 0, -6); wall.rotation.y = Math.PI/2; scene.add(wall);
+// wall backboard
+const bb = new THREE.Mesh(new THREE.PlaneGeometry(7.5,4.2), new THREE.MeshStandardMaterial({color:0x0c0e1f, metalness:0.5, roughness:0.5}));
+bb.position.set(0,2.2,-0.05); wall.add(bb);
+const wallTitle = makePanel(6,0.7,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 70px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('UPGRADE WALL', w/2, h/2); });
+wallTitle.position.set(0,3.85,0); wall.add(wallTitle);
+
+const upBlocks = [];
+upgradeDefs.forEach((def,i)=>{
+  const col=i%3, row=Math.floor(i/3);
+  const block = makePanel(2.1,1.55, drawUpgrade(def));
+  block.position.set(-2.4 + col*2.4, 2.85 - row*1.75, 0.02);
+  block.userData.def = def;
+  block.userData.flash = 0;
+  wall.add(block);
+  registerInteractable(block, ()=>buyUpgrade(def, block));
+  upBlocks.push(block);
+});
+function drawUpgrade(def){
+  return (ctx,w,h)=>{
+    const lv=S[def.key]||0, cost=upCost(def), afford=S.tokens>=cost;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = afford? '#15182e':'#0c0e1a';
+    roundRect(ctx,6,6,w-12,h-12,28); ctx.fill();
+    ctx.lineWidth=6; ctx.strokeStyle=def.color; ctx.stroke();
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.font='64px Segoe UI'; ctx.fillText(def.icon, 28, 24);
+    ctx.fillStyle=def.color; ctx.font='bold 46px Segoe UI'; ctx.fillText(def.name, 120, 36);
+    ctx.fillStyle='#9aa3c0'; ctx.font='26px Segoe UI'; ctx.fillText(def.desc(), 28, 120);
+    ctx.fillStyle='#fff'; ctx.font='bold 30px Segoe UI'; ctx.fillText('Lv '+lv, 28, h-70);
+    ctx.textAlign='right';
+    ctx.fillStyle= afford? '#ffd34d':'#5a6080'; ctx.font='bold 38px Segoe UI';
+    ctx.fillText('🪙 '+cost.toLocaleString(), w-28, h-72);
+  };
+}
+function buyUpgrade(def, block){
+  const cost=upCost(def);
+  if(S.tokens>=cost){
+    S.tokens-=cost; S[def.key]=(S[def.key]||0)+1; updateHUD(); save();
+    log(`Bought ${def.name} → Lv ${S[def.key]}`);
+    block.userData.flash=1; pulse(block,0x3ddc84);
+  } else { log(`Not enough tokens for ${def.name}`); pulse(block,0xff3b5b); }
+  upBlocks.forEach(b=>b.userData.redraw());
+}
+function refreshUpgrades(){ upBlocks.forEach(b=>b.userData.redraw()); }
+
+// pulse animation helper
+const pulses=[];
+function pulse(mesh,color){ pulses.push({mesh,t:0,color:new THREE.Color(color)}); }
+
+// ==================================================================
+// SLOT MACHINE
+// ==================================================================
+const SYMS = ['🍒','🍋','🔔','⭐','💎','7️⃣'];
+const SYM_PAY = { '🍒':3,'🍋':5,'🔔':10,'⭐':20,'💎':50,'7️⃣':100 };
+const slotGroup = new THREE.Group(); slotGroup.position.set(0,0,-9); scene.add(slotGroup);
+const slotCab = new THREE.Mesh(new THREE.BoxGeometry(2.6,3.4,1), new THREE.MeshStandardMaterial({color:0x2a1140, metalness:0.4, roughness:0.4}));
+slotCab.position.y=1.7; slotGroup.add(slotCab);
+let slotReels = ['🍒','🍋','🔔'];
+let slotSpinning=false;
+const slotScreen = makePanel(2.2,1.1,(c,w,h)=>{
+  c.fillStyle='#000'; c.fillRect(0,0,w,h);
+  c.textAlign='center'; c.textBaseline='middle'; c.font='110px serif';
+  for(let i=0;i<3;i++){ c.fillText(slotReels[i], w*(i+0.5)/3, h/2); }
+});
+slotScreen.position.set(0,2.2,0.52); slotGroup.add(slotScreen);
+const slotBtn = makePanel(1.6,0.55,(c,w,h)=>{ c.fillStyle='#ff5db1'; roundRect(c,0,0,w,h,30); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN  🪙10', w/2,h/2); });
+slotBtn.position.set(0,1.1,0.52); slotGroup.add(slotBtn);
+const slotLabel = makePanel(2.4,0.45,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#5dd6ff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎰 SLOTS', w/2,h/2); });
+slotLabel.position.set(0,3.55,0.52); slotGroup.add(slotLabel);
+registerInteractable(slotBtn, spinSlots);
+function weightedSym(){
+  // higher slotLuck biases toward valuable symbols
+  const luck=S.slotLuckLv;
+  const r=Math.random()*100;
+  const top = 5 + luck*1.2; // chance for 7 or diamond
+  if(r < top*0.4) return '7️⃣';
+  if(r < top) return '💎';
+  if(r < top+12) return '⭐';
+  if(r < top+28) return '🔔';
+  if(r < 60) return '🍋';
+  return '🍒';
+}
+function spinSlots(){
+  if(slotSpinning) return;
+  if(S.tokens<10){ log('Need 🪙10 to spin'); return; }
+  addTokens(-10); save(); slotSpinning=true;
+  let ticks=0; const final=[weightedSym(),weightedSym(),weightedSym()];
+  const iv=setInterval(()=>{
+    ticks++;
+    for(let i=0;i<3;i++){ if(ticks < 10+i*6) slotReels[i]=SYMS[(Math.random()*SYMS.length)|0]; else slotReels[i]=final[i]; }
+    slotScreen.userData.redraw();
+    if(ticks>=22){ clearInterval(iv); slotSpinning=false; resolveSlots(final); }
+  },60);
+}
+function resolveSlots(r){
+  let win=0;
+  if(r[0]===r[1]&&r[1]===r[2]) win = SYM_PAY[r[0]]*10;
+  else if(r[0]===r[1]||r[1]===r[2]||r[0]===r[2]){ const s = r[0]===r[1]?r[0]:(r[1]===r[2]?r[1]:r[0]); win = SYM_PAY[s]; }
+  win = Math.floor(win*payMul());
+  if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
+  if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${win}`); pulse(slotScreen,0xffd34d); }
+  else log(`🎰 ${r.join(' ')} → no win`);
+  save(); refreshUpgrades();
+}
+
+// ==================================================================
+// PLINKO
+// ==================================================================
+const plinkoGroup = new THREE.Group(); plinkoGroup.position.set(4.5,0,-8); plinkoGroup.rotation.y=-0.5; scene.add(plinkoGroup);
+const pBoard = new THREE.Mesh(new THREE.BoxGeometry(3,4,0.3), new THREE.MeshStandardMaterial({color:0x14163a, metalness:0.3, roughness:0.6}));
+pBoard.position.y=2.2; plinkoGroup.add(pBoard);
+// pegs
+const pegRows=7, pegMat=new THREE.MeshStandardMaterial({color:0x9b5dff,emissive:0x3a1a6a});
+for(let row=0;row<pegRows;row++){ const n=row+2; for(let i=0;i<n;i++){ const peg=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),pegMat); peg.position.set((i-(n-1)/2)*0.36, 3.4-row*0.38, 0.18); plinkoGroup.add(peg);} }
+// slot multipliers at bottom
+const PLINKO_MULT = [0.2,0.5,1,2,5,2,1,0.5,0.2];
+const plabels=[];
+for(let i=0;i<PLINKO_MULT.length;i++){
+  const m=PLINKO_MULT[i];
+  const lab=makePanel(0.34,0.4,(c,w,h)=>{ c.fillStyle = m>=2?'#ffd34d':(m>=1?'#5dd6ff':'#3a3f66'); roundRect(c,2,2,w-4,h-4,8); c.fill(); c.fillStyle='#0a0c1a'; c.font='bold 44px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m+'x',w/2,h/2); });
+  lab.position.set((i-(PLINKO_MULT.length-1)/2)*0.36, 0.45, 0.2); plinkoGroup.add(lab); plabels.push(lab);
+}
+const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙20',w/2,h/2); });
+dropBtn.position.set(0,0,0.2); plinkoGroup.add(dropBtn);
+registerInteractable(dropBtn, dropPlinko);
+const pLabel = makePanel(2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#9b5dff'; c.font='bold 58px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🔵 PLINKO',w/2,h/2); });
+pLabel.position.set(0,4.4,0.2); plinkoGroup.add(pLabel);
+const balls=[];
+function dropPlinko(){
+  if(S.tokens<20){ log('Need 🪙20 for plinko'); return; }
+  addTokens(-20); save();
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,12), new THREE.MeshStandardMaterial({color:0xffd34d, emissive:0x665010}));
+  ball.position.set((Math.random()-0.5)*0.2, 3.9, 0.25);
+  // luck biases drift toward center high slots
+  ball.userData.vx=(Math.random()-0.5)*0.02; ball.userData.vy=0; ball.userData.bias=(Math.random()-0.5)*0.004*(1+(S.plinkoLv-1)*0.3);
+  plinkoGroup.add(ball); balls.push(ball);
+}
+function stepBalls(dt){
+  for(let i=balls.length-1;i>=0;i--){ const b=balls[i];
+    b.userData.vy -= 1.8*dt; b.position.y += b.userData.vy*dt;
+    b.position.x += b.userData.vx + b.userData.bias;
+    // bounce against pegs region randomness
+    if(b.position.y < 3.4 && b.position.y>0.6 && Math.random()<0.3){ b.userData.vx += (Math.random()-0.5)*0.04; }
+    b.userData.vx*=0.96;
+    if(b.position.x<-1.45){b.position.x=-1.45;b.userData.vx*=-0.5;} if(b.position.x>1.45){b.position.x=1.45;b.userData.vx*=-0.5;}
+    if(b.position.y<=0.5){
+      let idx=Math.round(b.position.x/0.36 + (PLINKO_MULT.length-1)/2); idx=Math.max(0,Math.min(PLINKO_MULT.length-1,idx));
+      let win=Math.floor(20*PLINKO_MULT[idx]*payMul());
+      if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
+      addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${win}`); pulse(plabels[idx],0xffd34d);
+      plinkoGroup.remove(b); balls.splice(i,1); save(); refreshUpgrades();
+    }
+  }
+}
+
+// ==================================================================
+// SCRATCH TICKET
+// ==================================================================
+const scratchGroup=new THREE.Group(); scratchGroup.position.set(-4.5,0,-8); scratchGroup.rotation.y=0.5; scene.add(scratchGroup);
+const sStand=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.2,1),new THREE.MeshStandardMaterial({color:0x222}));
+let scratchState=null; // {cells:[], revealed:[], prize}
+const scratchPanel=makePanel(2.2,1.6,drawScratch);
+scratchPanel.position.set(0,2,0); scratchGroup.add(scratchPanel);
+const sLabel=makePanel(2.4,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#3ddc84'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎟️ SCRATCHERS',w/2,h/2); });
+sLabel.position.set(0,3.1,0); scratchGroup.add(sLabel);
+const buyTicket=makePanel(2,0.5,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#06210f'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('NEW TICKET 🪙25',w/2,h/2); });
+buyTicket.position.set(0,1.0,0); scratchGroup.add(buyTicket);
+registerInteractable(buyTicket, newTicket);
+registerInteractable(scratchPanel, (hit)=>scratchAt(hit));
+function newTicket(){
+  if(S.tokens<25){ log('Need 🪙25 for a ticket'); return; }
+  addTokens(-25); save();
+  const prizes=[0,0,0,5,10,10,25,50,100,250];
+  const cells=[]; for(let i=0;i<9;i++){ let p=prizes[(Math.random()*prizes.length)|0]; if(Math.random()<critChance()) p*=2; cells.push(Math.floor(p*payMul())); }
+  // luck: small chance to seed a jackpot triple
+  if(Math.random()<0.04*luckBonus()){ const v=500; cells[0]=cells[4]=cells[8]=Math.floor(v*payMul()); }
+  scratchState={cells, revealed:Array(9).fill(false), done:false};
+  scratchPanel.userData.redraw(); log('🎟️ New ticket! Scratch all 9.');
+}
+function scratchAt(hit){
+  if(!scratchState||scratchState.done){ return; }
+  if(!hit||!hit.uv){ // reveal one unrevealed if no uv (desktop)
+    const idx=scratchState.revealed.indexOf(false); if(idx>=0) scratchState.revealed[idx]=true;
+  } else {
+    const col=Math.min(2,Math.floor(hit.uv.x*3)); const row=Math.min(2,Math.floor((1-hit.uv.y)*3)); const idx=row*3+col;
+    scratchState.revealed[idx]=true;
+  }
+  scratchPanel.userData.redraw();
+  if(scratchState.revealed.every(Boolean)){
+    scratchState.done=true;
+    // win = match-3 of any value, else sum of pairs small. Simplify: pay total of matched triples + biggest cell bonus
+    const counts={}; scratchState.cells.forEach(v=>counts[v]=(counts[v]||0)+1);
+    let win=0; for(const v in counts){ if(counts[v]>=3 && +v>0) win+=(+v)*counts[v]; }
+    if(win===0) win=Math.floor(Math.max(...scratchState.cells)*0.2);
+    addTokens(win); log(`🎟️ Ticket → +${win}`); pulse(scratchPanel,0x3ddc84); save(); refreshUpgrades();
+  }
+}
+function drawScratch(ctx,w,h){
+  ctx.fillStyle='#1a1330'; ctx.fillRect(0,0,w,h);
+  if(!scratchState){ ctx.fillStyle='#9aa3c0'; ctx.font='bold 40px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('Buy a ticket below', w/2,h/2); return; }
+  for(let i=0;i<9;i++){ const col=i%3,row=(i/3)|0; const cw=w/3, ch=h/3, x=col*cw, y=row*ch;
+    if(scratchState.revealed[i]){ ctx.fillStyle='#0c0e1a'; ctx.fillRect(x+6,y+6,cw-12,ch-12);
+      const v=scratchState.cells[i]; ctx.fillStyle = v>0?'#ffd34d':'#5a6080'; ctx.font='bold 56px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(v>0?('🪙'+v):'✖', x+cw/2, y+ch/2);
+    } else { ctx.fillStyle='#7a7f9c'; roundRect(ctx,x+6,y+6,cw-12,ch-12,10); ctx.fill(); ctx.fillStyle='#555a78'; ctx.font='40px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('?', x+cw/2,y+ch/2); }
+  }
+}
+
+// ==================================================================
+// ROULETTE / SPIN WHEEL (more gambling!)
+// ==================================================================
+const wheelGroup=new THREE.Group(); wheelGroup.position.set(7,0,-3); wheelGroup.rotation.y=-1.0; scene.add(wheelGroup);
+const WHEEL_SEGMENTS=[0,2,0,3,0,5,0,2,0,10,0,3,0,2,0,50];
+const wheelDisc=makePanel(2.4,2.4,(c,w,h)=>{
+  const n=WHEEL_SEGMENTS.length, cx=w/2,cy=h/2,R=w/2-8;
+  for(let i=0;i<n;i++){ const a0=i/n*Math.PI*2, a1=(i+1)/n*Math.PI*2; c.beginPath(); c.moveTo(cx,cy); c.arc(cx,cy,R,a0,a1); c.closePath();
+    const m=WHEEL_SEGMENTS[i]; c.fillStyle = m===0?'#1a1330':(m>=10?'#ffd34d':(m>=3?'#ff5db1':'#5dd6ff')); c.fill(); c.strokeStyle='#05060a'; c.lineWidth=3; c.stroke();
+    c.save(); c.translate(cx,cy); c.rotate((a0+a1)/2); c.fillStyle = m===0?'#555':'#0a0c1a'; c.font='bold 34px Segoe UI'; c.textAlign='right'; c.textBaseline='middle'; c.fillText(m===0?'✖':(m+'x'), R-14, 0); c.restore();
+  }
+});
+wheelDisc.position.set(0,2.4,0); wheelGroup.add(wheelDisc);
+const wheelBtn=makePanel(1.8,0.5,(c,w,h)=>{ c.fillStyle='#ffd34d'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN WHEEL 🪙30',w/2,h/2); });
+wheelBtn.position.set(0,0.9,0.1); wheelGroup.add(wheelBtn);
+const wLabel=makePanel(2.2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎡 WHEEL',w/2,h/2); });
+wLabel.position.set(0,3.85,0); wheelGroup.add(wLabel);
+// pointer
+const ptr=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.25,3), new THREE.MeshStandardMaterial({color:0xffffff})); ptr.position.set(0,3.65,0.05); ptr.rotation.z=Math.PI; wheelGroup.add(ptr);
+registerInteractable(wheelBtn, spinWheel);
+let wheelSpin=null;
+function spinWheel(){
+  if(wheelSpin){ return; } if(S.tokens<30){ log('Need 🪙30 for wheel'); return; }
+  addTokens(-30); save();
+  const n=WHEEL_SEGMENTS.length;
+  // luck biases landing on higher segments
+  let target=(Math.random()*n)|0; if(Math.random()<0.15*luckBonus()){ // re-roll toward a winner
+    for(let k=0;k<n;k++){ if(WHEEL_SEGMENTS[(target)%n]>0) break; target=(target+1)%n; } }
+  const targetAngle = -(target+0.5)/n*Math.PI*2;
+  wheelSpin={ t:0, dur:3+Math.random(), from:wheelDisc.rotation.z, to: wheelDisc.rotation.z - Math.PI*8 + targetAngle, seg:target };
+}
+function stepWheel(dt){
+  if(!wheelSpin) return; wheelSpin.t+=dt; const p=Math.min(1,wheelSpin.t/wheelSpin.dur); const e=1-Math.pow(1-p,3);
+  wheelDisc.rotation.z = wheelSpin.from+(wheelSpin.to-wheelSpin.from)*e;
+  if(p>=1){ const m=WHEEL_SEGMENTS[wheelSpin.seg]; let win=Math.floor(30*m*payMul()); if(win>0&&Math.random()<critChance()){win*=5;log('💥 CRIT!');}
+    if(win>0){ addTokens(win); log(`🎡 ${m}x → +${win}`); pulse(wheelDisc,0xffd34d);} else log('🎡 Lost the spin');
+    wheelSpin=null; save(); refreshUpgrades(); }
+}
+
+// ==================================================================
+// COIN FLIP / HIGH-LOW DICE (even more gambling)
+// ==================================================================
+const diceGroup=new THREE.Group(); diceGroup.position.set(-7,0,-1); diceGroup.rotation.y=1.1; scene.add(diceGroup);
+const dLabel=makePanel(2,0.4,(c,w,h)=>{c.clearRect(0,0,w,h);c.fillStyle='#ff9b3d';c.font='bold 54px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('🎲 DOUBLE',w/2,h/2);});
+dLabel.position.set(0,2.7,0); diceGroup.add(dLabel);
+let dicePot=0;
+const diceDisp=makePanel(2,0.9,(c,w,h)=>{ c.fillStyle='#1a1330'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('Pot: 🪙'+dicePot, w/2,h/2); });
+diceDisp.position.set(0,2,0); diceGroup.add(diceDisp);
+const betBtn=makePanel(0.95,0.5,(c,w,h)=>{c.fillStyle='#5dd6ff';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#06210f';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('BET 🪙25',w/2,h/2);});
+betBtn.position.set(-0.52,1.2,0); diceGroup.add(betBtn);
+const flipBtn=makePanel(0.95,0.5,(c,w,h)=>{c.fillStyle='#ff5db1';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#1a0b2e';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('DOUBLE',w/2,h/2);});
+flipBtn.position.set(0.52,1.2,0); diceGroup.add(flipBtn);
+const cashBtn=makePanel(2,0.4,(c,w,h)=>{c.fillStyle='#3ddc84';roundRect(c,0,0,w,h,20);c.fill();c.fillStyle='#06210f';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('CASH OUT',w/2,h/2);});
+cashBtn.position.set(0,0.65,0); diceGroup.add(cashBtn);
+registerInteractable(betBtn, ()=>{ if(dicePot>0){log('Resolve current pot first');return;} if(S.tokens<25){log('Need 🪙25');return;} addTokens(-25); dicePot=25; diceDisp.userData.redraw(); log('🎲 Pot started at 25. Double or cash.'); save(); });
+registerInteractable(flipBtn, ()=>{ if(dicePot<=0){log('Place a bet first');return;}
+  const winP=0.5*Math.min(1.3,luckBonus()); if(Math.random()<winP){ dicePot=Math.floor(dicePot*2); log('🎲 Won! Pot doubled to '+dicePot); pulse(diceDisp,0x3ddc84);} else { log('🎲 Busted! Lost pot.'); dicePot=0; pulse(diceDisp,0xff3b5b);} diceDisp.userData.redraw(); save(); });
+registerInteractable(cashBtn, ()=>{ if(dicePot<=0){log('Nothing to cash');return;} addTokens(dicePot); log('🎲 Cashed out 🪙'+dicePot); dicePot=0; diceDisp.userData.redraw(); save(); refreshUpgrades(); });
+
+// ==================================================================
+// CONTROLLERS + RAY INTERACTION
+// ==================================================================
+const raycaster=new THREE.Raycaster();
+const tmpMat=new THREE.Matrix4();
+const controllers=[];
+const controllerModelFactory=new XRControllerModelFactory();
+function setupController(i){
+  const c=renderer.xr.getController(i); rig.add(c);
+  const grip=renderer.xr.getControllerGrip(i); grip.add(controllerModelFactory.createControllerModel(grip)); rig.add(grip);
+  // ray line
+  const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,-5)]);
+  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x5dd6ff})); line.scale.z=5; c.add(line);
+  c.userData.line=line; c.userData.index=i;
+  c.addEventListener('selectstart', ()=>onSelect(c));
+  controllers.push(c);
+  // hand support: also fire on 'squeeze' as tap fallback
+  c.addEventListener('squeezestart', ()=>onSelect(c));
+  return c;
+}
+setupController(0); setupController(1);
+
+function intersectFrom(originObj){
+  tmpMat.identity().extractRotation(originObj.matrixWorld);
+  raycaster.ray.origin.setFromMatrixPosition(originObj.matrixWorld);
+  raycaster.ray.direction.set(0,0,-1).applyMatrix4(tmpMat);
+  return raycaster.intersectObjects(interactables,false);
+}
+function onSelect(originObj){
+  const hits=intersectFrom(originObj);
+  if(hits.length){ const h=hits[0]; const m=h.object; if(m.userData.onTap){ m.userData.onTap(h); pulse(m,0x5dd6ff); } }
+}
+
+// Hover highlight
+let lastHover=null;
+function updateHover(){
+  let hovered=null;
+  for(const c of controllers){ const hits=intersectFrom(c); if(hits.length){ hovered=hits[0].object; c.userData.line.scale.z=hits[0].distance; } else c.userData.line.scale.z=5; }
+  lastHover=hovered;
+}
+
+// ==================================================================
+// LOCOMOTION (thumbstick)
+// ==================================================================
+let snapCooldown=0;
+function locomotion(dt){
+  const session=renderer.xr.getSession(); if(!session) return;
+  for(const src of session.inputSources){
+    if(!src.gamepad) continue; const ax=src.gamepad.axes; if(ax.length<4) continue;
+    const hand=src.handedness;
+    if(hand==='left'){
+      const x=ax[2]||0, y=ax[3]||0;
+      if(Math.abs(x)>0.15||Math.abs(y)>0.15){
+        const speed=3*dt; const dir=new THREE.Vector3();
+        camera.getWorldDirection(dir); dir.y=0; dir.normalize();
+        const right=new THREE.Vector3().crossVectors(dir,new THREE.Vector3(0,1,0));
+        rig.position.addScaledVector(dir, -y*speed); rig.position.addScaledVector(right, x*speed);
+      }
+    } else if(hand==='right'){
+      const x=ax[2]||0;
+      if(snapCooldown<=0 && Math.abs(x)>0.7){ rig.rotateY(-Math.sign(x)*Math.PI/6); snapCooldown=0.3; }
+    }
+  }
+  if(snapCooldown>0) snapCooldown-=dt;
+}
+
+// ==================================================================
+// DESKTOP FALLBACK (no headset)
+// ==================================================================
+const keys={};
+addEventListener('keydown',e=>keys[e.code]=true); addEventListener('keyup',e=>keys[e.code]=false);
+let yaw=0,pitch=0, pointerLocked=false;
+renderer.domElement.addEventListener('click', ()=>{
+  if(renderer.xr.isPresenting) return;
+  if(!pointerLocked){ renderer.domElement.requestPointerLock(); return; }
+  // raycast from camera center
+  raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+  const hits=raycaster.intersectObjects(interactables,false);
+  if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
+});
+document.addEventListener('pointerlockchange', ()=>{ pointerLocked=document.pointerLockElement===renderer.domElement; });
+addEventListener('mousemove', e=>{ if(!pointerLocked) return; yaw-=e.movementX*0.002; pitch-=e.movementY*0.002; pitch=Math.max(-1.4,Math.min(1.4,pitch)); });
+function desktopControls(dt){
+  if(renderer.xr.isPresenting) return;
+  rig.rotation.y=yaw; camera.rotation.x=pitch;
+  const speed=4*dt; const dir=new THREE.Vector3(0,0,-1).applyEuler(new THREE.Euler(0,yaw,0));
+  const right=new THREE.Vector3(1,0,0).applyEuler(new THREE.Euler(0,yaw,0));
+  if(keys['KeyW'])rig.position.addScaledVector(dir,speed);
+  if(keys['KeyS'])rig.position.addScaledVector(dir,-speed);
+  if(keys['KeyA'])rig.position.addScaledVector(right,-speed);
+  if(keys['KeyD'])rig.position.addScaledVector(right,speed);
+}
+
+// ==================================================================
+// LOOP
+// ==================================================================
+let autoAccum=0;
+const clock=new THREE.Clock();
+function animate(){
+  const dt=Math.min(0.05,clock.getDelta());
+  locomotion(dt); desktopControls(dt); updateHover(); stepBalls(dt); stepWheel(dt);
+  // passive income
+  if(S.autoLv>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum); addTokens(S.autoLv*g*Math.max(1,Math.floor(payMul()))); autoAccum-=g; save(); } }
+  // pulses
+  for(let i=pulses.length-1;i>=0;i--){ const p=pulses[i]; p.t+=dt*3; const s=1+Math.sin(Math.min(Math.PI,p.t*Math.PI))*0.06; p.mesh.scale.setScalar(s); if(p.t>=1){ p.mesh.scale.setScalar(1); pulses.splice(i,1);} }
+  // hover scale on upgrade blocks
+  upBlocks.forEach(b=>{ const target = (b===lastHover)?1.06:1; b.scale.x += (target-b.scale.x)*0.2; b.scale.y += (target-b.scale.y)*0.2; });
+  renderer.render(scene,camera);
+}
+renderer.setAnimationLoop(animate);
+
+addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+
+// ---------- Enter button ----------
+const overlay=document.getElementById('overlay');
+const enterBtn=document.getElementById('enterBtn');
+// hidden real VR button
+const vrBtn=VRButton.createButton(renderer); vrBtn.style.display='none'; document.body.appendChild(vrBtn);
+enterBtn.addEventListener('click', ()=>{
+  overlay.style.display='none';
+  if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }); }
+  else log('Desktop mode. Click to look/interact, WASD to move.');
+});
+log('Welcome! Earn tokens, buy upgrades, gamble it all.');
+refreshUpgrades();
+</script>
+</body>
+</html>
