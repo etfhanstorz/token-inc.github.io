@@ -1,2 +1,5 @@
 node_modules/
 .DS_Store
+# Never commit the Discord bot token / secrets
+bot/.env
+.env
