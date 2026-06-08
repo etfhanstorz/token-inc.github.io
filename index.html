@@ -157,7 +157,7 @@ const AE = { luckMul:1, payMul:1, until:0, name:null, color:null, rain:false, di
 function aeActive(){ return AE.until>performance.now(); }
 
 const luckBonus = () => (1 + (S.luckLv-1)*0.04) * (aeActive()?AE.luckMul:1);   // win-chance multiplier
-const payMul    = () => Math.max(0,(1 + (S.payLv-1)*0.35) * (aeActive()?AE.payMul:1)); // payout multiplier
+const payMul    = () => Math.max(0,(1 + (S.payLv-1)*0.35) * (1 + (S.fortuneLv||0)*0.08) * (aeActive()?AE.payMul:1)); // payout multiplier
 const critChance= () => Math.min(0.5, S.critLv*0.03);
 
 // ---------- HUD ----------
@@ -226,62 +226,102 @@ function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo
 // ==================================================================
 // UPGRADE WALL — 2D blocks you tap with your hands
 // ==================================================================
+// gx = column (0..2), gy = row (0..3). start = level the upgrade begins at (0 or 1).
+// req = prerequisite {key, lv} that must be reached before this unlocks.
 const upgradeDefs = [
-  { key:'luckLv',   name:'LUCK',      icon:'🍀', color:'#3ddc84', base:50,  grow:1.5, desc:()=>'Win chance +4%' },
-  { key:'payLv',    name:'PAYOUT',    icon:'💰', color:'#ffd34d', base:75,  grow:1.55,desc:()=>'Payouts +35%' },
-  { key:'critLv',   name:'CRIT',      icon:'💥', color:'#ff5db1', base:120, grow:1.7, desc:()=>'+3% chance to 5x a win' },
-  { key:'slotLuckLv',name:'SLOT ODDS',icon:'🎰', color:'#5dd6ff', base:90,  grow:1.6, desc:()=>'Better slot symbols' },
-  { key:'plinkoLv', name:'PLINKO',    icon:'🔵', color:'#9b5dff', base:90,  grow:1.6, desc:()=>'Higher plinko slots' },
-  { key:'autoLv',   name:'AUTO',      icon:'⚙️', color:'#ff9b3d', base:200, grow:1.8, desc:()=>'+1 token/sec passive' },
+  // Tier 0 — always available
+  { key:'luckLv',    name:'LUCK',     icon:'🍀', color:'#39ff14', base:50,  grow:1.5,  start:1, gx:0,gy:0, desc:()=>'Win chance +4%' },
+  { key:'payLv',     name:'PAYOUT',   icon:'💰', color:'#ffe347', base:75,  grow:1.55, start:1, gx:1,gy:0, desc:()=>'Payouts +35%' },
+  { key:'autoLv',    name:'AUTO',     icon:'⚙️', color:'#ff8a3d', base:200, grow:1.8,  start:0, gx:2,gy:0, desc:()=>'+1 token/sec' },
+  // Tier 1
+  { key:'critLv',    name:'CRIT',     icon:'💥', color:'#ff2e97', base:120, grow:1.7,  start:0, gx:0,gy:1, req:{key:'luckLv',lv:3}, desc:()=>'+3% to crit a win' },
+  { key:'slotLuckLv',name:'SLOT ODDS',icon:'🎰', color:'#00eaff', base:90,  grow:1.6,  start:1, gx:1,gy:1, req:{key:'payLv',lv:3}, desc:()=>'Better slot symbols' },
+  { key:'plinkoLv',  name:'PLINKO',   icon:'🔵', color:'#b46bff', base:90,  grow:1.6,  start:1, gx:2,gy:1, req:{key:'autoLv',lv:1}, desc:()=>'Higher plinko slots' },
+  // Tier 2
+  { key:'wheelLv',   name:'WHEEL',    icon:'🎡', color:'#ffd34d', base:140, grow:1.65, start:0, gx:0,gy:2, req:{key:'critLv',lv:2}, desc:()=>'Better wheel odds' },
+  { key:'diceLv',    name:'DICE',     icon:'🎲', color:'#5dd6ff', base:140, grow:1.65, start:0, gx:1,gy:2, req:{key:'slotLuckLv',lv:2}, desc:()=>'+2.5% dice odds' },
+  { key:'scratchLv', name:'SCRATCH',  icon:'🎟️', color:'#39ff14', base:140, grow:1.65, start:0, gx:2,gy:2, req:{key:'plinkoLv',lv:2}, desc:()=>'Better scratch luck' },
+  // Tier 3 — endgame
+  { key:'megaCritLv',name:'MEGACRIT', icon:'⚡', color:'#ff2e97', base:400, grow:1.9,  start:0, gx:0,gy:3, req:{key:'critLv',lv:5}, desc:()=>'+2x crit multiplier' },
+  { key:'fortuneLv', name:'FORTUNE',  icon:'🌟', color:'#ffe347', base:400, grow:1.9,  start:0, gx:1,gy:3, req:{key:'payLv',lv:6}, desc:()=>'+8% to ALL payouts' },
+  { key:'interestLv',name:'INTEREST', icon:'🏦', color:'#ff8a3d', base:500, grow:2.0,  start:0, gx:2,gy:3, req:{key:'autoLv',lv:3}, desc:()=>'+0.2%/s of your bank' },
 ];
-function upCost(def){ const lv=S[def.key]||0; return Math.floor(def.base*Math.pow(def.grow, def.key==='autoLv'||def.key==='critLv'?lv:(lv-1))); }
+const upgradeByKey = Object.fromEntries(upgradeDefs.map(d=>[d.key,d]));
+function upCost(def){ const lv=S[def.key]||0; return Math.floor(def.base*Math.pow(def.grow, lv-(def.start||0))); }
+function isUnlocked(def){ return !def.req || (S[def.req.key]||0) >= def.req.lv; }
+function nodePos(def){ return { x:(def.gx-1)*2.45, y:3.5-def.gy*1.0 }; }
 
 const wall = new THREE.Group();
 wall.position.set(0, 0, 8); wall.rotation.y = Math.PI; scene.add(wall); // behind the spawn point
-// wall backboard
-const bb = new THREE.Mesh(new THREE.PlaneGeometry(7.5,4.2), new THREE.MeshStandardMaterial({color:0x0c0e1f, metalness:0.5, roughness:0.5}));
-bb.position.set(0,2.2,-0.05); wall.add(bb);
-const wallTitle = makePanel(6,0.7,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 70px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('UPGRADE WALL', w/2, h/2); });
-wallTitle.position.set(0,3.85,0); wall.add(wallTitle);
+const bb = new THREE.Mesh(new THREE.PlaneGeometry(7.9,5.0), new THREE.MeshStandardMaterial({color:0x0a0420, metalness:0.5, roughness:0.5}));
+bb.position.set(0,2.0,-0.06); wall.add(bb);
+// neon frame around the tree
+const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(7.9,5.0)), new THREE.LineBasicMaterial({color:0x00eaff}));
+frame.position.set(0,2.0,-0.04); wall.add(frame);
+const wallTitle = makePanel(6,0.7,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#00eaff'; c.font='bold 64px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('▚ UPGRADE.SYS ▚', w/2, h/2); });
+wallTitle.position.set(0,4.25,0); wall.add(wallTitle);
+
+// connector lines between prerequisites (drawn first, behind blocks)
+const connectors=[];
+upgradeDefs.forEach(def=>{ if(!def.req) return; const a=nodePos(upgradeByKey[def.req.key]), b=nodePos(def);
+  const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(a.x,a.y,0.0),new THREE.Vector3(b.x,b.y,0.0)]);
+  const line=new THREE.Line(g, new THREE.LineBasicMaterial({color:0x244, transparent:true})); wall.add(line);
+  connectors.push({line, def}); });
+function refreshConnectors(){ connectors.forEach(c=>{ c.line.material.color.set(isUnlocked(c.def)?0x00eaff:0x223355); }); }
 
 const upBlocks = [];
-upgradeDefs.forEach((def,i)=>{
-  const col=i%3, row=Math.floor(i/3);
-  const block = makePanel(2.1,1.55, drawUpgrade(def));
-  block.position.set(-2.4 + col*2.4, 2.85 - row*1.75, 0.02);
-  block.userData.def = def;
-  block.userData.flash = 0;
+upgradeDefs.forEach((def)=>{
+  const p=nodePos(def);
+  const block = makePanel(2.2,0.92, drawUpgrade(def));
+  block.position.set(p.x, p.y, 0.02);
+  block.userData.def = def; block.userData.flash = 0;
   wall.add(block);
   registerInteractable(block, ()=>buyUpgrade(def, block));
   upBlocks.push(block);
 });
 function drawUpgrade(def){
   return (ctx,w,h)=>{
-    const lv=S[def.key]||0, cost=upCost(def), afford=S.tokens>=cost;
+    const lv=S[def.key]||0, cost=upCost(def), unlocked=isUnlocked(def), afford=S.tokens>=cost && unlocked;
     ctx.clearRect(0,0,w,h);
-    ctx.fillStyle = afford? '#15182e':'#0c0e1a';
-    roundRect(ctx,6,6,w-12,h-12,28); ctx.fill();
-    ctx.lineWidth=6; ctx.strokeStyle=def.color; ctx.stroke();
+    ctx.fillStyle = !unlocked? '#0a0a12' : (afford? '#160a2e':'#0d0820');
+    roundRect(ctx,5,5,w-10,h-10,16); ctx.fill();
+    ctx.lineWidth=5; ctx.strokeStyle = unlocked? def.color : '#33304a'; ctx.stroke();
+    if(!unlocked){
+      const rq=upgradeByKey[def.req.key];
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='52px "Courier New",monospace'; ctx.fillStyle='#5a6080'; ctx.fillText('🔒', 60, h/2);
+      ctx.font='bold 30px "Courier New",monospace'; ctx.fillStyle='#7d86ab'; ctx.textAlign='left';
+      ctx.fillText('LOCKED', 110, h/2-22);
+      ctx.font='22px "Courier New",monospace'; ctx.fillText('need '+rq.name+' Lv'+def.req.lv, 110, h/2+16);
+      return;
+    }
     ctx.textAlign='left'; ctx.textBaseline='top';
-    ctx.font='64px Segoe UI'; ctx.fillText(def.icon, 28, 24);
-    ctx.fillStyle=def.color; ctx.font='bold 46px Segoe UI'; ctx.fillText(def.name, 120, 36);
-    ctx.fillStyle='#9aa3c0'; ctx.font='26px Segoe UI'; ctx.fillText(def.desc(), 28, 120);
-    ctx.fillStyle='#fff'; ctx.font='bold 30px Segoe UI'; ctx.fillText('Lv '+lv, 28, h-70);
+    ctx.font='52px "Courier New",monospace'; ctx.fillText(def.icon, 18, 18);
+    ctx.fillStyle=def.color; ctx.font='bold 36px "Courier New",monospace'; ctx.fillText(def.name, 86, 22);
+    ctx.fillStyle='#9aa3c0'; ctx.font='22px "Courier New",monospace'; ctx.fillText(def.desc(), 20, 86);
+    ctx.fillStyle='#fff'; ctx.font='bold 26px "Courier New",monospace'; ctx.fillText('Lv '+lv, 20, h-44);
     ctx.textAlign='right';
-    ctx.fillStyle= afford? '#ffd34d':'#5a6080'; ctx.font='bold 38px Segoe UI';
-    ctx.fillText('🪙 '+cost.toLocaleString(), w-28, h-72);
+    ctx.fillStyle= afford? '#ffe347':'#5a6080'; ctx.font='bold 32px "Courier New",monospace';
+    ctx.fillText('🪙'+cost.toLocaleString(), w-20, h-46);
   };
 }
 function buyUpgrade(def, block){
+  if(!isUnlocked(def)){ const rq=upgradeByKey[def.req.key]; log(`🔒 ${def.name} locked — need ${rq.name} Lv${def.req.lv}`); pulse(block,0xff3b5b); sfxLose(); return; }
   const cost=upCost(def);
   if(S.tokens>=cost){
     S.tokens-=cost; S[def.key]=(S[def.key]||0)+1; updateHUD(); save();
     log(`Bought ${def.name} → Lv ${S[def.key]}`);
-    block.userData.flash=1; pulse(block,0x3ddc84); sfxBuy();
+    block.userData.flash=1; pulse(block,0x39ff14); sfxBuy();
   } else { log(`Not enough tokens for ${def.name}`); pulse(block,0xff3b5b); sfxLose(); }
-  upBlocks.forEach(b=>b.userData.redraw());
+  refreshUpgrades();
 }
-function refreshUpgrades(){ upBlocks.forEach(b=>b.userData.redraw()); }
+function refreshUpgrades(){ upBlocks.forEach(b=>b.userData.redraw()); refreshConnectors(); }
+refreshConnectors();
+// new gameplay multipliers from the expanded tree
+const critMult   = () => 5 + (S.megaCritLv||0)*2;
+const wheelLuck  = () => 1 + (S.wheelLv||0)*0.15;
+const diceBonus  = () => (S.diceLv||0)*0.025;
+const scratchLuck= () => 1 + (S.scratchLv||0)*0.25;
 
 // pulse animation helper
 const pulses=[];
@@ -366,7 +406,7 @@ function resolveSlots(r){
   if(r[0]===r[1]&&r[1]===r[2]) win = SYM_PAY[r[0]]*10;
   else if(r[0]===r[1]||r[1]===r[2]||r[0]===r[2]){ const s = r[0]===r[1]?r[0]:(r[1]===r[2]?r[1]:r[0]); win = SYM_PAY[s]; }
   win = Math.floor(win*payMul());
-  if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
+  if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
   if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${win}`); pulse(slotScreen,0xffd34d); reportWin(win,'Slots'); }
   else log(`🎰 ${r.join(' ')} → no win`);
   save(); refreshUpgrades();
@@ -415,7 +455,7 @@ function stepBalls(dt){
     if(b.position.y<=0.5){
       let idx=Math.round(b.position.x/0.36 + (PLINKO_MULT.length-1)/2); idx=Math.max(0,Math.min(PLINKO_MULT.length-1,idx));
       let win=Math.floor(20*PLINKO_MULT[idx]*payMul());
-      if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
+      if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
       addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${win}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko');
       plinkoGroup.remove(b); balls.splice(i,1); save(); refreshUpgrades();
     }
@@ -443,7 +483,7 @@ function newTicket(){
   const prizes=[0,0,0,10,10,25,25,50,100,250];
   const cells=[]; for(let i=0;i<9;i++){ cells.push(prizes[(Math.random()*prizes.length)|0]); }
   // luck: small chance to seed a jackpot triple
-  if(Math.random()<0.04*luckBonus()){ cells[0]=cells[4]=cells[8]=500; }
+  if(Math.random()<0.04*luckBonus()*scratchLuck()){ cells[0]=cells[4]=cells[8]=500; }
   scratchState={cells, revealed:Array(9).fill(false), done:false};
   scratchPanel.userData.redraw(); log('🎟️ New ticket! Scratch all 9.');
 }
@@ -463,7 +503,7 @@ function scratchAt(hit){
     let base=0; for(const v in counts){ if(+v>0) base += (+v) * Math.floor(counts[v]/3); }
     // apply payout multiplier once, then crit, rounded to a clean number
     let win = Math.round(base * payMul() / 5) * 5;
-    if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
+    if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
     if(win>0){ addTokens(win); log(`🎟️ Ticket → +${win}`); pulse(scratchPanel,0x3ddc84); reportWin(win,'Scratcher'); }
     else log('🎟️ No match — better luck next ticket.');
     save(); refreshUpgrades();
@@ -505,7 +545,7 @@ function spinWheel(){
   addTokens(-30); save();
   const n=WHEEL_SEGMENTS.length;
   // luck biases landing on higher segments
-  let target=(Math.random()*n)|0; if(Math.random()<0.15*luckBonus()){ // re-roll toward a winner
+  let target=(Math.random()*n)|0; if(Math.random()<0.15*luckBonus()*wheelLuck()){ // re-roll toward a winner
     for(let k=0;k<n;k++){ if(WHEEL_SEGMENTS[(target)%n]>0) break; target=(target+1)%n; } }
   const targetAngle = -(target+0.5)/n*Math.PI*2;
   wheelSpin={ t:0, dur:3+Math.random(), from:wheelDisc.rotation.z, to: wheelDisc.rotation.z - Math.PI*8 + targetAngle, seg:target };
@@ -513,7 +553,7 @@ function spinWheel(){
 function stepWheel(dt){
   if(!wheelSpin) return; wheelSpin.t+=dt; const p=Math.min(1,wheelSpin.t/wheelSpin.dur); const e=1-Math.pow(1-p,3);
   wheelDisc.rotation.z = wheelSpin.from+(wheelSpin.to-wheelSpin.from)*e;
-  if(p>=1){ const m=WHEEL_SEGMENTS[wheelSpin.seg]; let win=Math.floor(30*m*payMul()); if(win>0&&Math.random()<critChance()){win*=5;log('💥 CRIT!');}
+  if(p>=1){ const m=WHEEL_SEGMENTS[wheelSpin.seg]; let win=Math.floor(30*m*payMul()); if(win>0&&Math.random()<critChance()){win*=critMult();log('💥 CRIT!');}
     if(win>0){ addTokens(win); log(`🎡 ${m}x → +${win}`); pulse(wheelDisc,0xffd34d); reportWin(win,'Wheel');} else log('🎡 Lost the spin');
     wheelSpin=null; save(); refreshUpgrades(); }
 }
@@ -535,7 +575,7 @@ const cashBtn=makePanel(2,0.4,(c,w,h)=>{c.fillStyle='#3ddc84';roundRect(c,0,0,w,
 cashBtn.position.set(0,0.65,0); diceGroup.add(cashBtn);
 registerInteractable(betBtn, ()=>{ if(dicePot>0){log('Resolve current pot first');return;} if(S.tokens<25){log('Need 🪙25');return;} addTokens(-25); dicePot=25; diceDisp.userData.redraw(); log('🎲 Pot started at 25. Double or cash.'); save(); });
 registerInteractable(flipBtn, ()=>{ if(dicePot<=0){log('Place a bet first');return;}
-  const winP=0.5*Math.min(1.3,luckBonus()); if(Math.random()<winP){ dicePot=Math.floor(dicePot*2); log('🎲 Won! Pot doubled to '+dicePot); pulse(diceDisp,0x3ddc84);} else { log('🎲 Busted! Lost pot.'); dicePot=0; pulse(diceDisp,0xff3b5b);} diceDisp.userData.redraw(); save(); });
+  const winP=Math.min(0.9, 0.5*Math.min(1.3,luckBonus()) + diceBonus()); if(Math.random()<winP){ dicePot=Math.floor(dicePot*2); log('🎲 Won! Pot doubled to '+dicePot); pulse(diceDisp,0x3ddc84);} else { log('🎲 Busted! Lost pot.'); dicePot=0; pulse(diceDisp,0xff3b5b);} diceDisp.userData.redraw(); save(); });
 registerInteractable(cashBtn, ()=>{ if(dicePot<=0){log('Nothing to cash');return;} addTokens(dicePot); log('🎲 Cashed out 🪙'+dicePot); reportWin(dicePot,'Double-or-Nothing'); dicePot=0; diceDisp.userData.redraw(); save(); refreshUpgrades(); });
 
 // ==================================================================
@@ -1092,7 +1132,10 @@ function animate(){
   const dt=Math.min(0.05,clock.getDelta());
   locomotion(dt); desktopControls(dt); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt); stepEvents(dt);
   // passive income
-  if(S.autoLv>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum); addTokens(S.autoLv*g*Math.max(1,Math.floor(payMul()))); autoAccum-=g; save(); } }
+  if(S.autoLv>0 || (S.interestLv||0)>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum);
+      let gain=S.autoLv*g*Math.max(1,Math.floor(payMul()));
+      if(S.interestLv>0) gain += Math.min(10000, Math.floor(S.tokens*0.002*S.interestLv))*g; // capped interest
+      if(gain>0) addTokens(gain); autoAccum-=g; save(); } }
   // pulses
   for(let i=pulses.length-1;i>=0;i--){ const p=pulses[i]; p.t+=dt*3; const s=1+Math.sin(Math.min(Math.PI,p.t*Math.PI))*0.06; p.mesh.scale.setScalar(s); if(p.t>=1){ p.mesh.scale.setScalar(1); pulses.splice(i,1);} }
   // hover scale on upgrade blocks
@@ -1129,7 +1172,8 @@ enterBtn.addEventListener('click', ()=>{
 document.getElementById('resetBtn').addEventListener('click', ()=>{
   if(confirm('Reset all progress? Tokens and upgrades will be wiped (your username is kept).')){
     const name=S.username; localStorage.removeItem('tokenCasino');
-    Object.assign(S,{tokens:100,luckLv:1,payLv:1,autoLv:0,slotLuckLv:1,plinkoLv:1,critLv:0,topWins:[],username:name});
+    Object.assign(S,{tokens:100,luckLv:1,payLv:1,autoLv:0,slotLuckLv:1,plinkoLv:1,critLv:0,
+      wheelLv:0,diceLv:0,scratchLv:0,megaCritLv:0,fortuneLv:0,interestLv:0,topWins:[],username:name});
     save(); location.reload();
   }
 });
