@@ -175,8 +175,8 @@ const ADMIN_CHANNEL = 'token-casino-abcd1234';
 const AE = { luckMul:1, payMul:1, until:0, name:null, color:null, rain:false, disco:false };
 function aeActive(){ return AE.until>performance.now(); }
 
-const luckBonus = () => (1 + (S.luckLv-1)*0.04) * (aeActive()?AE.luckMul:1);   // win-chance multiplier
-const payMul    = () => Math.max(0,(1 + (S.payLv-1)*0.35) * (1 + (S.fortuneLv||0)*0.08) * (aeActive()?AE.payMul:1)); // payout multiplier
+const luckBonus = () => (1 + (S.luckLv-1)*0.04) * (1 + (S.cloverLv||0)*0.08) * (aeActive()?AE.luckMul:1);   // win-chance multiplier
+const payMul    = () => Math.max(0,(1 + (S.payLv-1)*0.35) * (1 + (S.fortuneLv||0)*0.08) * (1 + (S.overLv||0)*0.15) * (aeActive()?AE.payMul:1)); // payout multiplier
 const critChance= () => Math.min(0.5, S.critLv*0.03);
 
 // ---------- HUD ----------
@@ -291,12 +291,16 @@ const upgradeDefs = [
   { key:'megaCritLv',name:'MEGACRIT', icon:'⚡', color:'#ff2e97', base:400, grow:1.9,  start:0, gx:0,gy:3, req:{key:'critLv',lv:5}, desc:()=>'+2x crit multiplier' },
   { key:'fortuneLv', name:'FORTUNE',  icon:'🌟', color:'#ffe347', base:400, grow:1.9,  start:0, gx:1,gy:3, req:{key:'payLv',lv:6}, desc:()=>'+8% to ALL payouts' },
   { key:'interestLv',name:'INTEREST', icon:'🏦', color:'#ff8a3d', base:500, grow:2.0,  start:0, gx:2,gy:3, req:{key:'autoLv',lv:3}, desc:()=>'+0.2%/s of your bank' },
+  // Tier 4 — prestige
+  { key:'overLv',    name:'OVERDRIVE',icon:'🚀', color:'#ff2e97', base:2500, grow:2.15, start:0, gx:0,gy:4, req:{key:'megaCritLv',lv:3}, desc:()=>'+15% to all payouts' },
+  { key:'cloverLv',  name:'4-LEAF',   icon:'☘️', color:'#39ff14', base:2500, grow:2.15, start:0, gx:1,gy:4, req:{key:'fortuneLv',lv:3}, desc:()=>'+8% luck' },
+  { key:'vaultLv',   name:'VAULT',    icon:'🏰', color:'#ffcf6a', base:4000, grow:2.25, start:0, gx:2,gy:4, req:{key:'interestLv',lv:3}, desc:()=>'+0.3%/s interest' },
 ];
 const upgradeByKey = Object.fromEntries(upgradeDefs.map(d=>[d.key,d]));
 function upCost(def){ const lv=S[def.key]||0; return Math.floor(def.base*Math.pow(def.grow, lv-(def.start||0))); }
 function isUnlocked(def){ return !def.req || (S[def.req.key]||0) >= def.req.lv; }
 // ground position of each node — a branching tree laid out on the floor behind spawn
-function nodePos(def){ return { x:(def.gx-1)*3.0, z:6 + def.gy*2.6 }; }
+function nodePos(def){ return { x:(def.gx-1)*3.0, z:5.5 + def.gy*2.2 }; }
 
 const treeGroup = new THREE.Group(); scene.add(treeGroup);
 // entrance sign
@@ -1101,10 +1105,23 @@ function banUnderRay(){
   return true;
 }
 
+// Nature events — random pleasant weather that grants temporary boosts
+const NATURE=[
+  {name:'☀️ SUNNY SPELL',  color:'#ffcf33', luck:1,   pay:1.8, opts:{}},
+  {name:'🍀 LUCKY BREEZE', color:'#39ff14', luck:2.5, pay:1,   opts:{}},
+  {name:'🌈 RAINBOW',      color:'#ff5db1', luck:2,   pay:2,   opts:{}},
+  {name:'🌧️ TOKEN RAIN',   color:'#5dd6ff', luck:1,   pay:1.6, opts:{rain:true}},
+  {name:'🌻 HARVEST',      color:'#ff9b3d', luck:1.5, pay:1.5, opts:{}},
+];
+let natureAccum=0, nextNature=60+Math.random()*60;
+function triggerNature(){ const n=NATURE[(Math.random()*NATURE.length)|0]; startEvent(n.name, n.color, 25+Math.random()*20|0, n.luck, n.pay, n.opts); log('🍃 A nature event began!'); }
+
 // Per-frame updates for events
 function stepEvents(dt){
   const t=performance.now();
   if(AE.name && AE.until<=t) endEvent();
+  // randomly start a nature event when nothing is active
+  if(!AE.name){ natureAccum+=dt; if(natureAccum>=nextNature){ triggerNature(); natureAccum=0; nextNature=80+Math.random()*120; } }
   if(eventBanner.visible){ eventBanner.userData.redraw(); eventBanner.lookAt(camera.getWorldPosition(new THREE.Vector3())); }
   if(announcePanel.visible){ announcePanel.lookAt(camera.getWorldPosition(new THREE.Vector3())); if(t>announceUntil){ announcePanel.visible=false; announceText=''; } }
   // rain
@@ -1239,15 +1256,31 @@ if(isTouch){
 // ==================================================================
 // LOOP
 // ==================================================================
+// COLLISION — stop the player walking through machines, crates, posts
+const colliders=[];
+function buildColliders(){
+  [[0,-9,1.7],[4.5,-8,1.9],[-4.5,-8,1.6],[7,-3,1.6],[-7,-1,1.3],[0,2.7,1.0]].forEach(o=>colliders.push({x:o[0],z:o[1],r:o[2]}));
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2,R=10.6; colliders.push({x:Math.cos(a)*R,z:Math.sin(a)*R,r:0.4}); }
+  upgradeDefs.forEach(d=>{ const p=nodePos(d); colliders.push({x:p.x,z:p.z,r:0.95}); });
+}
+buildColliders();
+function resolveCollisions(){
+  const pr=0.3; let px=rig.position.x, pz=rig.position.z;
+  for(const o of colliders){ let dx=px-o.x, dz=pz-o.z, d=Math.hypot(dx,dz); const min=o.r+pr;
+    if(d<min){ if(d<1e-4){ dx=1; dz=0; d=1; } px=o.x+dx/d*min; pz=o.z+dz/d*min; } }
+  rig.position.x=px; rig.position.z=pz;
+}
+
 let autoAccum=0;
 const clock=new THREE.Clock();
 function animate(){
   const dt=Math.min(0.05,clock.getDelta());
-  locomotion(dt); desktopControls(dt); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt); stepEvents(dt);
+  locomotion(dt); desktopControls(dt); resolveCollisions(); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt); stepEvents(dt);
   // passive income
   if(S.autoLv>0 || (S.interestLv||0)>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum);
       let gain=S.autoLv*g*Math.max(1,Math.floor(payMul()));
-      if(S.interestLv>0) gain += Math.min(10000, Math.floor(S.tokens*0.002*S.interestLv))*g; // capped interest
+      const intLv=(S.interestLv||0)+(S.vaultLv||0)*1.5;
+      if(intLv>0) gain += Math.floor(S.tokens*0.002*intLv)*g; // interest (vault boosts rate)
       if(gain>0) addTokens(gain); autoAccum-=g; save(); } }
   // pulses
   for(let i=pulses.length-1;i>=0;i--){ const p=pulses[i]; p.t+=dt*3; const s=1+Math.sin(Math.min(Math.PI,p.t*Math.PI))*0.06; p.mesh.scale.setScalar(s); if(p.t>=1){ p.mesh.scale.setScalar(1); pulses.splice(i,1);} }
@@ -1292,7 +1325,8 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   if(confirm('Reset all progress? Tokens and upgrades will be wiped (your username is kept).')){
     const name=S.username; localStorage.removeItem('tokenCasino');
     Object.assign(S,{tokens:100,luckLv:1,payLv:1,autoLv:0,slotLuckLv:1,plinkoLv:1,critLv:0,
-      wheelLv:0,diceLv:0,scratchLv:0,megaCritLv:0,fortuneLv:0,interestLv:0,topWins:[],username:name});
+      wheelLv:0,diceLv:0,scratchLv:0,megaCritLv:0,fortuneLv:0,interestLv:0,
+      overLv:0,cloverLv:0,vaultLv:0,betMul:1,topWins:[],username:name});
     save(); location.reload();
   }
 });
