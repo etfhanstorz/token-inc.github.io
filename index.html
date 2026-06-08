@@ -11,21 +11,29 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=VT323&display=swap" rel="stylesheet">
 <style>
+  :root{ --cyan:#00eaff; --magenta:#ff2e97; --green:#39ff14; --yellow:#ffe347; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body { height:100%; overflow:hidden; background:#05060a; font-family:'Segoe UI',system-ui,sans-serif; color:#fff; }
+  html,body { height:100%; overflow:hidden; background:#05030f; font-family:'VT323','Courier New',monospace; color:#cfeaff; }
+  /* CRT scanlines + vignette over everything */
+  #crt { position:fixed; inset:0; z-index:40; pointer-events:none;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 4px);
+    box-shadow:inset 0 0 180px rgba(0,0,0,0.8); }
   #overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    background:radial-gradient(circle at 50% 30%, #1a1140, #05060a 70%); z-index:10; text-align:center; padding:24px; }
-  #overlay h1 { font-size:42px; letter-spacing:2px; background:linear-gradient(90deg,#ffd34d,#ff5db1,#5dd6ff);
-    -webkit-background-clip:text; background-clip:text; color:transparent; margin-bottom:8px; }
-  #overlay p { color:#9aa3c0; max-width:560px; line-height:1.5; margin-bottom:18px; }
-  .info { font-size:13px; color:#6b7396; max-width:560px; }
-  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:5; font-weight:700;
-    background:rgba(10,12,24,.6); padding:8px 18px; border-radius:20px; border:1px solid #2a2f55; }
-  #hud span { color:#ffd34d; }
-  #log { position:fixed; bottom:10px; left:10px; z-index:5; font-size:12px; color:#7d86ab; max-width:40vw; }
-  button.start { font-size:20px; padding:14px 40px; border:none; border-radius:30px; cursor:pointer; font-weight:700;
-    background:linear-gradient(90deg,#ffd34d,#ff5db1); color:#1a0b2e; box-shadow:0 8px 30px rgba(255,93,177,.4); }
+    background:radial-gradient(circle at 50% 25%, #2a0a4a, #0a0420 55%, #05030f 80%); z-index:10; text-align:center; padding:24px; }
+  #overlay h1 { font-family:'Orbitron',sans-serif; font-size:46px; font-weight:800; letter-spacing:4px;
+    background:linear-gradient(90deg,var(--cyan),var(--magenta),var(--yellow)); -webkit-background-clip:text; background-clip:text; color:transparent;
+    margin-bottom:10px; text-shadow:0 0 18px rgba(255,46,151,.5); filter:drop-shadow(0 0 10px rgba(0,234,255,.5)); }
+  #overlay p { color:#9fb6d6; max-width:560px; line-height:1.5; margin-bottom:18px; font-size:19px; }
+  .info { font-size:16px; color:#6b86b0; max-width:560px; }
+  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:5; font-weight:700; font-size:20px; letter-spacing:1px;
+    background:rgba(8,4,24,.7); padding:6px 18px; border-radius:6px; border:1px solid var(--cyan); box-shadow:0 0 14px rgba(0,234,255,.35); color:#bdf3ff; }
+  #hud span { color:var(--yellow); text-shadow:0 0 8px rgba(255,227,71,.6); }
+  #log { position:fixed; bottom:10px; left:10px; z-index:5; font-size:17px; color:#7fd8ff; max-width:46vw; text-shadow:0 0 6px rgba(0,234,255,.4); }
+  button.start { font-family:'Orbitron',sans-serif; font-size:20px; padding:14px 44px; border:2px solid var(--cyan); border-radius:4px; cursor:pointer; font-weight:800; letter-spacing:2px;
+    background:linear-gradient(90deg,var(--magenta),var(--cyan)); color:#05030f; box-shadow:0 0 26px rgba(0,234,255,.55); text-transform:uppercase; }
   button.start:active { transform:scale(.97); }
   #crosshair { position:fixed; top:50%; left:50%; width:22px; height:22px; margin:-11px 0 0 -11px; z-index:6;
     pointer-events:none; display:none; }
@@ -44,6 +52,7 @@
 </style>
 </head>
 <body>
+<div id="crt"></div>
 <div id="hud">🪙 <span id="tok">0</span> tokens &nbsp;|&nbsp; 🍀 Luck Lv<span id="luckLv">1</span> &nbsp;|&nbsp; 💰 Payout x<span id="payMul">1.0</span></div>
 <div id="log"></div>
 <div id="crosshair"></div>
@@ -173,8 +182,8 @@ updateHUD();
 
 // ---------- Three setup ----------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05060a);
-scene.fog = new THREE.Fog(0x05060a, 12, 40);
+scene.background = new THREE.Color(0x0a0420);
+scene.fog = new THREE.Fog(0x14062e, 14, 46);
 
 const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.05, 200);
 const renderer = new THREE.WebGLRenderer({ antialias:true });
@@ -197,13 +206,26 @@ scene.add(new THREE.HemisphereLight(0x8899ff, 0x221133, 0.7));
 const key = new THREE.DirectionalLight(0xffffff, 0.8);
 key.position.set(5,10,5); key.castShadow=true; scene.add(key);
 function neon(x,y,z,c){ const l=new THREE.PointLight(c,1.4,18); l.position.set(x,y,z); scene.add(l); return l; }
-neon(-6,4,-6,0xff5db1); neon(6,4,-6,0x5dd6ff); neon(0,5,-10,0xffd34d); neon(0,4,6,0x9b5dff);
+neon(-6,4,-6,0xff2e97); neon(6,4,-6,0x00eaff); neon(0,5,-10,0xff2e97); neon(0,4,6,0x00eaff);
 
-// Floor
-const floorGeo = new THREE.PlaneGeometry(60,60);
-const floorMat = new THREE.MeshStandardMaterial({ color:0x0a0c1a, metalness:0.6, roughness:0.4 });
+// Floor — dark chrome with a glowing magenta/cyan grid (retrowave)
+const floorGeo = new THREE.PlaneGeometry(80,80);
+const floorMat = new THREE.MeshStandardMaterial({ color:0x07021a, metalness:0.85, roughness:0.25 });
 const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
-const grid = new THREE.GridHelper(60,60,0x2a2f55,0x161a30); grid.position.y=0.01; scene.add(grid);
+const grid = new THREE.GridHelper(80,80,0x00eaff,0xff2e97); grid.position.y=0.012; grid.material.transparent=true; grid.material.opacity=0.5; scene.add(grid);
+
+// Retrowave sun + sky behind the casino
+const sunCanvas=document.createElement('canvas'); sunCanvas.width=sunCanvas.height=256;
+(()=>{ const x=sunCanvas.getContext('2d'); const g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#ffe347'); g.addColorStop(0.5,'#ff7ad9'); g.addColorStop(1,'#ff2e97'); x.fillStyle=g; x.beginPath(); x.arc(128,128,120,0,7); x.fill();
+  x.globalCompositeOperation='destination-out'; for(let i=0;i<8;i++){ const yy=150+i*14; x.fillRect(0,yy,256,7-i*0.6+2); } })();
+const sunTex=new THREE.CanvasTexture(sunCanvas);
+const sun=new THREE.Mesh(new THREE.PlaneGeometry(16,16), new THREE.MeshBasicMaterial({map:sunTex,transparent:true,depthWrite:false}));
+sun.position.set(0,7,-30); scene.add(sun);
+const skyGeo=new THREE.PlaneGeometry(120,40);
+const skyCanvas=document.createElement('canvas'); skyCanvas.width=8; skyCanvas.height=256;
+(()=>{ const x=skyCanvas.getContext('2d'); const g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#1a0640'); g.addColorStop(0.7,'#3a0a5a'); g.addColorStop(1,'#0a0420'); x.fillStyle=g; x.fillRect(0,0,8,256); })();
+const sky=new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(skyCanvas),depthWrite:false}));
+sky.position.set(0,10,-32); scene.add(sky);
 
 // ---------- Interactables ----------
 const interactables = []; // {mesh, onTap, hover()}
