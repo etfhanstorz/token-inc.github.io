@@ -835,16 +835,41 @@ eventBanner.position.set(0,4.6,-8.9); eventBanner.visible=false; scene.add(event
 
 // Announcement banner (admin chat messages)
 let announceText='', announceUntil=0;
-const announcePanel=makePanel(5,1.4,(c,w,h)=>{ c.clearRect(0,0,w,h); if(!announceText) return;
-  c.fillStyle='rgba(10,8,24,0.82)'; roundRect(c,0,0,w,h,28); c.fill();
+// wrap text into lines that fit maxW at the current font; long unbreakable words
+// are split character-by-character so they never overflow.
+function wrapText(c, text, maxW){
+  const lines=[];
+  for(const rawWord of text.split(/\s+/)){
+    let word=rawWord;
+    // break a single word that's wider than the box
+    while(c.measureText(word).width>maxW && word.length>1){
+      let i=1; while(i<word.length && c.measureText(word.slice(0,i+1)).width<=maxW) i++;
+      lines.push(word.slice(0,i)); word=word.slice(i);
+    }
+    const last=lines.length-1;
+    if(last>=0 && c.measureText(lines[last]+' '+word).width<=maxW) lines[last]+=' '+word;
+    else lines.push(word);
+  }
+  return lines.length?lines:[''];
+}
+const announcePanel=makePanel(5,2.2,(c,w,h)=>{ c.clearRect(0,0,w,h); if(!announceText) return;
+  c.fillStyle='rgba(10,8,24,0.85)'; roundRect(c,0,0,w,h,28); c.fill();
   c.lineWidth=6; c.strokeStyle='#5dd6ff'; c.stroke();
-  c.fillStyle='#5dd6ff'; c.font='bold 34px Segoe UI'; c.textAlign='center'; c.textBaseline='top'; c.fillText('📢 ANNOUNCEMENT', w/2, 24);
-  c.fillStyle='#fff'; c.font='bold 46px Segoe UI'; c.textBaseline='middle';
-  // word-wrap
-  const words=announceText.split(' '); let line='', y=h*0.55; const maxW=w-60, lines=[];
-  for(const wd of words){ const test=line?line+' '+wd:wd; if(c.measureText(test).width>maxW && line){ lines.push(line); line=wd; } else line=test; }
-  if(line) lines.push(line);
-  const startY=h*0.5 - (lines.length-1)*30; lines.forEach((ln,i)=>c.fillText(ln, w/2, startY + i*60));
+  c.fillStyle='#5dd6ff'; c.font='bold 30px Segoe UI'; c.textAlign='center'; c.textBaseline='top'; c.fillText('📢 ANNOUNCEMENT', w/2, 18);
+  // auto-fit: shrink font until all wrapped lines fit the width AND height
+  const maxW=w-48, bodyTop=70, availH=h-bodyTop-18;
+  let fs=64, lines;
+  while(fs>=12){
+    c.font='bold '+fs+'px Segoe UI';
+    lines=wrapText(c, announceText, maxW);
+    const lineH=fs*1.18;
+    const widest=Math.max(...lines.map(l=>c.measureText(l).width));
+    if(widest<=maxW && lines.length*lineH<=availH) break;
+    fs-=2;
+  }
+  c.fillStyle='#fff'; c.textBaseline='middle';
+  const lineH=fs*1.18, startY=bodyTop + (availH-lines.length*lineH)/2 + lineH/2;
+  lines.forEach((ln,i)=>c.fillText(ln, w/2, startY+i*lineH));
 });
 announcePanel.position.set(0,2.6,-3); announcePanel.visible=false; scene.add(announcePanel);
 function showAnnouncement(text){ announceText=String(text||'').slice(0,140); announceUntil=performance.now()+9000; announcePanel.visible=true; announcePanel.userData.redraw(); sfxEvent(); flashScreen('#5dd6ff'); log('📢 '+announceText); }
