@@ -68,4 +68,10 @@ export const commands = [
     .setName('unmute')
     .setDescription('Let a muted player talk again')
     .addStringOption(o => o.setName('user').setDescription('Username or device id').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('rename')
+    .setDescription('Change a player\'s username')
+    .addStringOption(o => o.setName('user').setDescription('Current username or device id').setRequired(true))
+    .addStringOption(o => o.setName('name').setDescription('New username').setRequired(true)),
 ].map(c => c.toJSON());

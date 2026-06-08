@@ -882,6 +882,7 @@ function applyAdmin(msg){
     case 'unban':{ setBanned(false); log('✅ You were unbanned. Reload to play.'); break; }
     case 'mute': { VOICE.forced=true; if(!VOICE.muted) toggleMute(); else { const dm=document.getElementById('domMute'); if(dm){dm.textContent='🔇';dm.classList.add('muted');} } log('🔇 An admin muted your mic.'); break; }
     case 'unmute':{ VOICE.forced=false; log('🎤 An admin unmuted you.'); break; }
+    case 'rename':{ const nm=(msg.name||'').trim().slice(0,16); if(nm){ const old=S.username; S.username=nm; save(); log('✏️ An admin renamed you: '+old+' → '+nm); const ni=document.getElementById('nameInput'); if(ni) ni.value=nm; } break; }
     case 'chat': case 'say': { showAnnouncement(msg.text||msg.message||''); break; }
     case 'tokens': { const amt=+msg.amount||0; addTokens(amt); flashScreen('#ffd34d'); sfxCoin(); log(`🎁 Admin granted 🪙${amt}`); save(); refreshUpgrades(); break; }
     case 'luckboost': { const mult=+msg.mult||2; startEvent('🍀 LUCK x'+mult, '#3ddc84', +msg.seconds||60, mult, 1); break; }

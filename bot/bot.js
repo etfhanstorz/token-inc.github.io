@@ -95,6 +95,12 @@ client.on('interactionCreate', async (i) => {
         publish({ cmd: 'unmute', target: user });
         return i.reply(`🎤 Unmuted **${user}**.`);
       }
+      case 'rename': {
+        const user = i.options.getString('user', true);
+        const name = i.options.getString('name', true);
+        publish({ cmd: 'rename', target: user, name });
+        return i.reply(`✏️ Renamed **${user}** → **${name}**.`);
+      }
       default:
         return i.reply({ content: 'Unknown command.', ephemeral: true });
     }
