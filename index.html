@@ -26,18 +26,30 @@
     box-shadow:0 0 4px rgba(0,0,0,.8); }
   #crosshair::before { left:50%; top:0; width:2px; height:100%; margin-left:-1px; }
   #crosshair::after { top:50%; left:0; height:2px; width:100%; margin-top:-1px; }
+  #joyBase { position:fixed; width:110px; height:110px; border-radius:50%; z-index:6; display:none;
+    background:rgba(255,255,255,.08); border:2px solid rgba(255,255,255,.25); pointer-events:none; }
+  #joyKnob { position:absolute; left:50%; top:50%; width:54px; height:54px; margin:-27px 0 0 -27px; border-radius:50%;
+    background:rgba(93,214,255,.55); border:2px solid rgba(255,255,255,.6); }
+  #domMute { position:fixed; top:10px; right:10px; z-index:6; display:none; width:44px; height:44px; border-radius:50%;
+    border:1px solid #2a2f55; background:rgba(10,12,24,.7); color:#fff; font-size:20px; cursor:pointer; }
+  #domMute.muted { background:rgba(80,16,28,.85); border-color:#ff3b5b; }
+  #VRButton { display:none !important; }
 </style>
 </head>
 <body>
 <div id="hud">🪙 <span id="tok">0</span> tokens &nbsp;|&nbsp; 🍀 Luck Lv<span id="luckLv">1</span> &nbsp;|&nbsp; 💰 Payout x<span id="payMul">1.0</span></div>
 <div id="log"></div>
 <div id="crosshair"></div>
+<button id="domMute" title="Toggle mic (M)">🎤</button>
+<div id="joyBase"><div id="joyKnob"></div></div>
 <div id="overlay">
   <h1>TOKEN CASINO VR</h1>
   <p>Step into the VR casino. Tap the machines with your hands or trigger to gamble. Buy upgrades on the glowing wall to boost your luck and payouts. <b>Thumbstick to move.</b></p>
-  <button class="start" id="enterBtn">Enter VR</button>
-  <p class="info">No VR headset? Click "Enter VR" anyway to play in desktop fallback (WASD + mouse-look, click to interact).<br>
-  Left stick = move • Right stick = snap turn • Trigger/click = interact</p>
+  <button class="start" id="enterBtn">Enter</button>
+  <p class="info">No VR headset? Tap "Enter" anyway.<br>
+  <b>VR:</b> left stick = move • right stick = snap turn • trigger = interact<br>
+  <b>Desktop:</b> WASD = move • mouse = look • click = interact<br>
+  <b>Phone/tablet:</b> left thumb = move joystick • drag right side = look • tap = interact</p>
   <div style="margin-top:18px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
     <input id="roomInput" placeholder="room code" maxlength="16"
       style="padding:10px 14px; border-radius:14px; border:1px solid #2a2f55; background:#0c0e1f; color:#fff; font-size:15px; width:140px; text-align:center;">
@@ -273,6 +285,8 @@ const muteBtn = makePanel(0.28,0.18,(c,w,h)=>{ c.clearRect(0,0,w,h); const m=VOI
   c.fillStyle='#fff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m?'🔇':'🎤', w/2, h/2); });
 muteBtn.position.set(0.42,-0.32,-0.9); muteBtn.rotation.x=-0.5; camera.add(muteBtn);
 registerInteractable(muteBtn, ()=>{ toggleMute(); muteBtn.userData.redraw(); });
+// the in-world HUD is for VR only; flat screens (desktop/mobile) use the DOM HUD
+statsPanel.visible=false; muteBtn.visible=false;
 // keep the in-world board in sync with the DOM HUD
 const _updateHUD = updateHUD;
 updateHUD = function(){ _updateHUD(); refreshStats(); };
@@ -650,6 +664,7 @@ function broadcastRoster(){
 function toggleMute(){
   VOICE.muted=!VOICE.muted; MP.muted=VOICE.muted;
   if(MP.localStream) MP.localStream.getAudioTracks().forEach(t=>t.enabled=!VOICE.muted);
+  const dm=document.getElementById('domMute'); if(dm){ dm.textContent=VOICE.muted?'🔇':'🎤'; dm.classList.toggle('muted',VOICE.muted); }
   log(VOICE.muted?'🔇 Muted':'🎤 Unmuted');
 }
 function mpBroadcastWin(amount, game){
@@ -900,6 +915,7 @@ addEventListener('keydown',e=>{ keys[e.code]=true; if(e.code==='KeyM'){ toggleMu
 let yaw=0,pitch=0, pointerLocked=false;
 renderer.domElement.addEventListener('click', ()=>{
   if(renderer.xr.isPresenting) return;
+  if(isTouch) return; // touch devices use the touch handlers instead of pointer lock
   if(!pointerLocked){ renderer.domElement.requestPointerLock(); return; }
   // raycast from camera center
   raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
@@ -908,6 +924,7 @@ renderer.domElement.addEventListener('click', ()=>{
 });
 document.addEventListener('pointerlockchange', ()=>{ pointerLocked=document.pointerLockElement===renderer.domElement; });
 addEventListener('mousemove', e=>{ if(!pointerLocked) return; yaw-=e.movementX*0.002; pitch-=e.movementY*0.002; pitch=Math.max(-1.4,Math.min(1.4,pitch)); });
+const mobileMove={x:0,y:0}; // from on-screen joystick (-1..1)
 function desktopControls(dt){
   if(renderer.xr.isPresenting) return;
   rig.rotation.y=yaw; camera.rotation.x=pitch;
@@ -917,6 +934,68 @@ function desktopControls(dt){
   if(keys['KeyS'])rig.position.addScaledVector(dir,-speed);
   if(keys['KeyA'])rig.position.addScaledVector(right,-speed);
   if(keys['KeyD'])rig.position.addScaledVector(right,speed);
+  // mobile joystick: y forward/back, x strafe
+  if(mobileMove.x||mobileMove.y){ rig.position.addScaledVector(dir,-mobileMove.y*speed); rig.position.addScaledVector(right,mobileMove.x*speed); }
+}
+
+// ==================================================================
+// MOBILE / TOUCH CONTROLS — left thumb = move, right drag = look, tap = interact
+// ==================================================================
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+const joyBase=document.getElementById('joyBase'), joyKnob=document.getElementById('joyKnob');
+let moveTouchId=null, joyCx=0, joyCy=0;
+let lookTouchId=null, lookLastX=0, lookLastY=0, lookMoved=0, lookStartT=0;
+const JOY_R=55;
+function isLeftHalf(x){ return x < window.innerWidth*0.45; }
+function onTouchStart(e){
+  if(renderer.xr.isPresenting) return;
+  audio(); // unlock sound on first touch
+  for(const t of e.changedTouches){
+    if(moveTouchId===null && isLeftHalf(t.clientX)){
+      moveTouchId=t.identifier; joyCx=t.clientX; joyCy=t.clientY;
+      joyBase.style.left=(joyCx-JOY_R)+'px'; joyBase.style.top=(joyCy-JOY_R)+'px'; joyBase.style.display='block';
+      joyKnob.style.transform='translate(0px,0px)';
+    } else if(lookTouchId===null){
+      lookTouchId=t.identifier; lookLastX=t.clientX; lookLastY=t.clientY; lookMoved=0; lookStartT=performance.now();
+    }
+  }
+  e.preventDefault();
+}
+function onTouchMove(e){
+  for(const t of e.changedTouches){
+    if(t.identifier===moveTouchId){
+      let dx=t.clientX-joyCx, dy=t.clientY-joyCy; const d=Math.hypot(dx,dy);
+      if(d>JOY_R){ dx*=JOY_R/d; dy*=JOY_R/d; }
+      joyKnob.style.transform=`translate(${dx}px,${dy}px)`;
+      mobileMove.x=dx/JOY_R; mobileMove.y=dy/JOY_R;
+    } else if(t.identifier===lookTouchId){
+      const dx=t.clientX-lookLastX, dy=t.clientY-lookLastY; lookLastX=t.clientX; lookLastY=t.clientY;
+      lookMoved+=Math.abs(dx)+Math.abs(dy);
+      yaw-=dx*0.005; pitch-=dy*0.005; pitch=Math.max(-1.4,Math.min(1.4,pitch));
+    }
+  }
+  e.preventDefault();
+}
+function onTouchEnd(e){
+  for(const t of e.changedTouches){
+    if(t.identifier===moveTouchId){ moveTouchId=null; mobileMove.x=0; mobileMove.y=0; joyBase.style.display='none'; }
+    else if(t.identifier===lookTouchId){
+      // a short tap that didn't drag = interact at the crosshair
+      if(lookMoved<12 && performance.now()-lookStartT<300){
+        raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+        const hits=raycaster.intersectObjects(interactables,false);
+        if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ sfxClick(); h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
+      }
+      lookTouchId=null;
+    }
+  }
+  e.preventDefault();
+}
+if(isTouch){
+  renderer.domElement.addEventListener('touchstart', onTouchStart, {passive:false});
+  renderer.domElement.addEventListener('touchmove', onTouchMove, {passive:false});
+  renderer.domElement.addEventListener('touchend', onTouchEnd, {passive:false});
+  renderer.domElement.addEventListener('touchcancel', onTouchEnd, {passive:false});
 }
 
 // ==================================================================
@@ -945,11 +1024,14 @@ const enterBtn=document.getElementById('enterBtn');
 // hidden real VR button
 const vrBtn=VRButton.createButton(renderer); vrBtn.style.display='none'; document.body.appendChild(vrBtn);
 const crosshairEl=document.getElementById('crosshair');
-renderer.xr.addEventListener('sessionstart', ()=>{ crosshairEl.style.display='none'; });
-renderer.xr.addEventListener('sessionend', ()=>{ crosshairEl.style.display='block'; });
+const domMute=document.getElementById('domMute');
+domMute.addEventListener('click', ()=>{ audio(); toggleMute(); });
+renderer.xr.addEventListener('sessionstart', ()=>{ crosshairEl.style.display='none'; statsPanel.visible=true; muteBtn.visible=true; domMute.style.display='none'; });
+renderer.xr.addEventListener('sessionend', ()=>{ crosshairEl.style.display='block'; statsPanel.visible=false; muteBtn.visible=false; });
 enterBtn.addEventListener('click', ()=>{
   overlay.style.display='none';
   crosshairEl.style.display='block';
+  domMute.style.display='block';
   if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }); }
   else log('Desktop mode. Click to look/interact, WASD to move.');
 });
