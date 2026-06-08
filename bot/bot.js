@@ -38,33 +38,62 @@ client.on('interactionCreate', async (i) => {
     switch (i.commandName) {
       case 'tokens': {
         const amount = i.options.getInteger('amount', true);
-        publish({ cmd: 'tokens', amount });
-        return i.reply(`🎁 Granted **🪙${amount}** to everyone.`);
+        const user = i.options.getString('user') ?? undefined;
+        publish({ cmd: 'tokens', amount, target: user });
+        return i.reply(`🎁 Granted **🪙${amount}** to ${user ? `**${user}**` : 'everyone'}.`);
       }
       case 'luckboost': {
         const mult = i.options.getNumber('multiplier', true);
         const seconds = i.options.getInteger('seconds') ?? 60;
-        publish({ cmd: 'luckboost', mult, seconds });
-        return i.reply(`🍀 Luck **x${mult}** for **${seconds}s**.`);
+        const user = i.options.getString('user') ?? undefined;
+        publish({ cmd: 'luckboost', mult, seconds, target: user });
+        return i.reply(`🍀 Luck **x${mult}** for **${seconds}s** ${user ? `for **${user}**` : '(everyone)'}.`);
       }
       case 'event': {
         const name = i.options.getString('name', true);
         const seconds = i.options.getInteger('seconds', true);
         const luck = i.options.getNumber('luck') ?? undefined;
         const payout = i.options.getNumber('payout') ?? undefined;
-        publish({ cmd: 'event', name, seconds, luck, payout });
+        const user = i.options.getString('user') ?? undefined;
+        publish({ cmd: 'event', name, seconds, luck, payout, target: user });
         const extra = name === 'rainbow' ? ` (luck x${luck ?? 5}, payout x${payout ?? 5})` : '';
-        return i.reply(`✨ Event **${name}** for **${seconds}s**${extra}.`);
+        return i.reply(`✨ Event **${name}** for **${seconds}s**${extra} ${user ? `for **${user}**` : ''}.`);
       }
       case 'payout': {
         const amount = i.options.getInteger('amount', true);
-        publish({ cmd: 'payout', amount });
-        return i.reply(`🎲 Double-or-nothing payout of **🪙${amount}** sent to everyone.`);
+        const user = i.options.getString('user') ?? undefined;
+        publish({ cmd: 'payout', amount, target: user });
+        return i.reply(`🎲 Double-or-nothing **🪙${amount}** for ${user ? `**${user}**` : 'everyone'}.`);
       }
       case 'say': {
         const text = i.options.getString('message', true);
         publish({ cmd: 'chat', text });
         return i.reply(`📢 Announced: "${text}"`);
+      }
+      case 'kick': {
+        const user = i.options.getString('user', true);
+        publish({ cmd: 'kick', target: user });
+        return i.reply(`👢 Kicked **${user}**.`);
+      }
+      case 'ban': {
+        const user = i.options.getString('user', true);
+        publish({ cmd: 'ban', target: user });
+        return i.reply(`⛔ Banned **${user}**.`);
+      }
+      case 'unban': {
+        const user = i.options.getString('user', true);
+        publish({ cmd: 'unban', target: user });
+        return i.reply(`✅ Unbanned **${user}** (they reload to play).`);
+      }
+      case 'mute': {
+        const user = i.options.getString('user', true);
+        publish({ cmd: 'mute', target: user });
+        return i.reply(`🔇 Muted **${user}**.`);
+      }
+      case 'unmute': {
+        const user = i.options.getString('user', true);
+        publish({ cmd: 'unmute', target: user });
+        return i.reply(`🎤 Unmuted **${user}**.`);
       }
       default:
         return i.reply({ content: 'Unknown command.', ephemeral: true });

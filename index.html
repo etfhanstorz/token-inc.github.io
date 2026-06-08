@@ -45,6 +45,10 @@
 <div id="overlay">
   <h1>TOKEN CASINO VR</h1>
   <p>Step into the VR casino. Tap the machines with your hands or trigger to gamble. Buy upgrades on the glowing wall to boost your luck and payouts. <b>Thumbstick to move.</b></p>
+  <div style="margin-bottom:14px;">
+    <input id="nameInput" placeholder="your username" maxlength="16"
+      style="padding:10px 14px; border-radius:14px; border:1px solid #2a2f55; background:#0c0e1f; color:#fff; font-size:16px; width:200px; text-align:center;">
+  </div>
   <button class="start" id="enterBtn">Enter</button>
   <p class="info">No VR headset? Tap "Enter" anyway.<br>
   <b>VR:</b> left stick = move • right stick = snap turn • trigger = interact<br>
@@ -58,6 +62,7 @@
     <span id="mpStatus" style="color:#7d86ab; font-size:13px;">solo</span>
   </div>
   <p class="info" style="margin-top:6px;">Multiplayer (up to ~5): one person clicks <b>Host</b>, shares the room code; others type it and click <b>Join</b>, then everyone clicks Enter VR.</p>
+  <button id="resetBtn" style="margin-top:14px; padding:8px 16px; border:1px solid #5a2030; border-radius:14px; cursor:pointer; font-weight:600; background:transparent; color:#ff7a93; font-size:13px;">Reset progress</button>
 </div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -89,9 +94,22 @@ const save = () => localStorage.setItem('tokenCasino', JSON.stringify(S));
 const load = () => { try { Object.assign(S, JSON.parse(localStorage.getItem('tokenCasino')||'{}')); } catch(e){} };
 load();
 
+// ---------- Player identity ----------
+const DEVICE_ID = (()=>{ let d=localStorage.getItem('casinoDeviceId'); if(!d){ d='dev-'+Math.random().toString(36).slice(2,10); localStorage.setItem('casinoDeviceId',d);} return d; })();
+if(!S.username) S.username = 'Player-'+DEVICE_ID.slice(4,8);
+function isBanned(){ return localStorage.getItem('casinoBanned')==='1'; }
+function setBanned(b){ if(b) localStorage.setItem('casinoBanned','1'); else localStorage.removeItem('casinoBanned'); }
+
 // ---------- Discord webhook ----------
 // Paste your Discord webhook URL between the quotes to enable high-payout pings.
 const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1513324557220708513/W9UayWH6rKptEtgwk6TDllmwNG0B9b1YnBWUDid0QQ6GEYRIolE2R85B3z-yg28WMOnE';
+// Optional separate webhook for player presence (joins). Leave '' to reuse the one above.
+const PLAYER_WEBHOOK_URL = '';
+function webhookSend(url, content){ if(!url) return; try{ const fd=new FormData(); fd.append('content', content); fetch(url,{method:'POST',mode:'no-cors',body:fd}); }catch(e){} }
+function notifyPresence(){
+  const url = PLAYER_WEBHOOK_URL || DISCORD_WEBHOOK_URL;
+  webhookSend(url, `🟢 **${S.username}** entered the casino  ·  id \`${DEVICE_ID}\`  ·  🪙${Math.floor(S.tokens)}`);
+}
 const LEADERBOARD_SIZE = 10; // a win that ranks in the top N highest payouts ever triggers a ping
 const MIN_NOTIFY = 250;      // ...but only if it's also at least this big (kills early-game spam)
 function notifyDiscord(amount, game, rank){
@@ -99,7 +117,7 @@ function notifyDiscord(amount, game, rank){
   try {
     const medal = rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'🏅';
     const fd = new FormData();
-    fd.append('content', `${medal} **Top-${LEADERBOARD_SIZE} payout!** Someone just hit **🪙 ${amount.toLocaleString()}** on **${game}** — that's the **#${rank} highest payout ever** (Luck Lv${S.luckLv}, Payout x${payMul().toFixed(1)}).`);
+    fd.append('content', `${medal} **Top-${LEADERBOARD_SIZE} payout!** **${S.username}** just hit **🪙 ${amount.toLocaleString()}** on **${game}** — that's the **#${rank} highest payout ever** (Luck Lv${S.luckLv}, Payout x${payMul().toFixed(1)}).`);
     fetch(DISCORD_WEBHOOK_URL, { method:'POST', mode:'no-cors', body: fd });
   } catch(e){ /* fire-and-forget */ }
 }
@@ -123,7 +141,7 @@ function reportWin(amount, game){
   }
 }
 
-const VOICE = { muted:false };   // hoist-safe mute state (used by the mute button drawn before MP exists)
+const VOICE = { muted:false, forced:false };   // hoist-safe mute state (forced = admin-muted)
 
 // ---------- Admin events (driven by the Discord bot via MQTT) ----------
 // Pick a secret channel name and put the SAME value in the bot's .env ADMIN_CHANNEL.
@@ -674,6 +692,7 @@ function broadcastRoster(){
   broadcast({t:'roster', ids}); applyRoster(ids);
 }
 function toggleMute(){
+  if(VOICE.forced && VOICE.muted){ log('🔇 You are muted by an admin.'); return; } // can't unmute
   VOICE.muted=!VOICE.muted; MP.muted=VOICE.muted;
   if(MP.localStream) MP.localStream.getAudioTracks().forEach(t=>t.enabled=!VOICE.muted);
   const dm=document.getElementById('domMute'); if(dm){ dm.textContent=VOICE.muted?'🔇':'🎤'; dm.classList.toggle('muted',VOICE.muted); }
@@ -830,6 +849,15 @@ function flashScreen(color){ // brief fullscreen tint via DOM
   const d=document.createElement('div'); d.style.cssText='position:fixed;inset:0;z-index:4;pointer-events:none;transition:opacity .6s;opacity:.5;background:'+color;
   document.body.appendChild(d); requestAnimationFrame(()=>d.style.opacity='0'); setTimeout(()=>d.remove(),700);
 }
+function disconnectVoiceAndPeers(){ try{ if(MP.peer) MP.peer.destroy(); }catch(e){} MP.peer=null; MP.conns=[]; MP.hostConn=null; }
+function showBlock(title, message, permanent){
+  disconnectVoiceAndPeers();                 // remove from multiplayer/voice (keep MQTT so /unban can reach)
+  let el=document.getElementById('blockScreen');
+  if(!el){ el=document.createElement('div'); el.id='blockScreen'; document.body.appendChild(el); }
+  el.style.cssText='position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(5,6,10,.97);text-align:center;padding:24px;';
+  el.innerHTML='<h1 style="font-size:52px;color:#ff5db1;margin-bottom:12px;">'+title+'</h1><p style="color:#9aa3c0;max-width:480px;line-height:1.5;">'+message+'</p>'+(permanent?'':'<button id="rejoinBtn" style="margin-top:22px;padding:12px 30px;border:none;border-radius:24px;font-weight:700;cursor:pointer;background:#5dd6ff;color:#06210f;">Rejoin</button>');
+  if(!permanent){ const b=document.getElementById('rejoinBtn'); if(b) b.onclick=()=>location.reload(); }
+}
 function startEvent(name, color, seconds, luckMul, payMul, opts={}){
   AE.name=name; AE.color=color; AE.luckMul=luckMul; AE.payMul=payMul; AE.until=performance.now()+seconds*1000;
   AE.rain=!!opts.rain; AE.disco=!!opts.disco;
@@ -837,11 +865,23 @@ function startEvent(name, color, seconds, luckMul, payMul, opts={}){
   sfxEvent(); flashScreen(color); log(`✨ EVENT: ${name} for ${seconds}s`);
 }
 function endEvent(){ AE.name=null; AE.luckMul=1; AE.payMul=1; AE.rain=false; AE.disco=false; AE.until=0; discoBall.visible=false; eventBanner.visible=false; }
+// Is a (possibly targeted) command meant for this client? No target = everyone.
+function isForMe(msg){
+  const t=(msg.target||msg.user||'').trim().toLowerCase();
+  if(!t) return true;
+  return t===(S.username||'').toLowerCase() || t===DEVICE_ID.toLowerCase();
+}
 function applyAdmin(msg){
   try{ if(typeof msg==='string') msg=JSON.parse(msg); }catch(e){ return; }
   if(!msg||!msg.cmd) return;
+  if(!isForMe(msg)) return;            // targeted command for someone else
   const sec = +msg.seconds||30;
   switch(msg.cmd){
+    case 'kick': { showBlock('👢 KICKED', 'An admin kicked you from the casino.', false); break; }
+    case 'ban':  { setBanned(true); showBlock('⛔ BANNED', 'An admin banned you from the casino.', true); break; }
+    case 'unban':{ setBanned(false); log('✅ You were unbanned. Reload to play.'); break; }
+    case 'mute': { VOICE.forced=true; if(!VOICE.muted) toggleMute(); else { const dm=document.getElementById('domMute'); if(dm){dm.textContent='🔇';dm.classList.add('muted');} } log('🔇 An admin muted your mic.'); break; }
+    case 'unmute':{ VOICE.forced=false; log('🎤 An admin unmuted you.'); break; }
     case 'chat': case 'say': { showAnnouncement(msg.text||msg.message||''); break; }
     case 'tokens': { const amt=+msg.amount||0; addTokens(amt); flashScreen('#ffd34d'); sfxCoin(); log(`🎁 Admin granted 🪙${amt}`); save(); refreshUpgrades(); break; }
     case 'luckboost': { const mult=+msg.mult||2; startEvent('🍀 LUCK x'+mult, '#3ddc84', +msg.seconds||60, mult, 1); break; }
@@ -1040,12 +1080,25 @@ const domMute=document.getElementById('domMute');
 domMute.addEventListener('click', ()=>{ audio(); toggleMute(); });
 renderer.xr.addEventListener('sessionstart', ()=>{ crosshairEl.style.display='none'; statsPanel.visible=true; muteBtn.visible=true; domMute.style.display='none'; });
 renderer.xr.addEventListener('sessionend', ()=>{ crosshairEl.style.display='block'; statsPanel.visible=false; muteBtn.visible=false; });
+// username field
+const nameInput=document.getElementById('nameInput');
+nameInput.value=S.username||'';
 enterBtn.addEventListener('click', ()=>{
+  const nm=(nameInput.value||'').trim().slice(0,16); if(nm){ S.username=nm; save(); }
   overlay.style.display='none';
   crosshairEl.style.display='block';
   domMute.style.display='block';
+  notifyPresence();
   if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }); }
   else log('Desktop mode. Click to look/interact, WASD to move.');
+});
+// reset progress
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if(confirm('Reset all progress? Tokens and upgrades will be wiped (your username is kept).')){
+    const name=S.username; localStorage.removeItem('tokenCasino');
+    Object.assign(S,{tokens:100,luckLv:1,payLv:1,autoLv:0,slotLuckLv:1,plinkoLv:1,critLv:0,topWins:[],username:name});
+    save(); location.reload();
+  }
 });
 // Multiplayer buttons
 const roomInput=document.getElementById('roomInput');
@@ -1060,6 +1113,8 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
 
 log('Welcome! Earn tokens, buy upgrades, gamble it all.');
 refreshUpgrades();
+// if previously banned, block entry (admin can /unban, then reload)
+if(isBanned()){ showBlock('⛔ BANNED', 'You are banned from the casino. An admin can lift this.', true); }
 </script>
 </body>
 </html>
