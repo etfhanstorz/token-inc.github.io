@@ -49,6 +49,7 @@
 </div>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
 <script type="importmap">
 { "imports": {
   "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
@@ -101,6 +102,8 @@ function reportWin(amount, game){
   if(board.length>LEADERBOARD_SIZE) board.length=LEADERBOARD_SIZE;
   const rank = board.indexOf(amount)+1;
   save();
+  // sound: big fanfare for notable hits, small chime otherwise
+  if(amount >= MIN_NOTIFY) sfxBig(); else sfxWin();
   // only ping/broadcast for genuinely big hits — kills early-game spam
   if(amount >= MIN_NOTIFY){
     notifyDiscord(amount, game, rank);
@@ -110,8 +113,14 @@ function reportWin(amount, game){
 
 const VOICE = { muted:false };   // hoist-safe mute state (used by the mute button drawn before MP exists)
 
-const luckBonus = () => 1 + (S.luckLv-1)*0.04;            // multiplier on win chance
-const payMul    = () => 1 + (S.payLv-1)*0.35;             // payout multiplier
+// ---------- Admin events (driven by the Discord bot via MQTT) ----------
+// Pick a secret channel name and put the SAME value in the bot's .env ADMIN_CHANNEL.
+const ADMIN_CHANNEL = 'token-casino-abcd1234';
+const AE = { luckMul:1, payMul:1, until:0, name:null, color:null, rain:false, disco:false };
+function aeActive(){ return AE.until>performance.now(); }
+
+const luckBonus = () => (1 + (S.luckLv-1)*0.04) * (aeActive()?AE.luckMul:1);   // win-chance multiplier
+const payMul    = () => Math.max(0,(1 + (S.payLv-1)*0.35) * (aeActive()?AE.payMul:1)); // payout multiplier
 const critChance= () => Math.min(0.5, S.critLv*0.03);
 
 // ---------- HUD ----------
@@ -231,8 +240,8 @@ function buyUpgrade(def, block){
   if(S.tokens>=cost){
     S.tokens-=cost; S[def.key]=(S[def.key]||0)+1; updateHUD(); save();
     log(`Bought ${def.name} → Lv ${S[def.key]}`);
-    block.userData.flash=1; pulse(block,0x3ddc84);
-  } else { log(`Not enough tokens for ${def.name}`); pulse(block,0xff3b5b); }
+    block.userData.flash=1; pulse(block,0x3ddc84); sfxBuy();
+  } else { log(`Not enough tokens for ${def.name}`); pulse(block,0xff3b5b); sfxLose(); }
   upBlocks.forEach(b=>b.userData.redraw());
 }
 function refreshUpgrades(){ upBlocks.forEach(b=>b.userData.redraw()); }
@@ -520,7 +529,7 @@ function intersectFrom(originObj){
 }
 function onSelect(originObj){
   const hits=intersectFrom(originObj);
-  if(hits.length){ const h=hits[0]; const m=h.object; if(m.userData.onTap){ m.userData.onTap(h); pulse(m,0x5dd6ff); } }
+  if(hits.length){ const h=hits[0]; const m=h.object; if(m.userData.onTap){ sfxClick(); m.userData.onTap(h); pulse(m,0x5dd6ff); } }
 }
 
 // Hover highlight
@@ -696,6 +705,151 @@ function mpUpdate(dt){
 }
 
 // ==================================================================
+// SOUND EFFECTS (WebAudio, synthesized — no asset files)
+// ==================================================================
+let actx=null;
+function audio(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(actx&&actx.state==='suspended') actx.resume(); return actx; }
+function tone(freq, dur=0.12, type='sine', gain=0.18, when=0){
+  const a=audio(); if(!a) return; const t=a.currentTime+when;
+  const o=a.createOscillator(), g=a.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(gain,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t+dur+0.02);
+}
+function sfxClick(){ tone(420,0.05,'square',0.12); }
+function sfxTick(){ tone(900,0.03,'square',0.06); }
+function sfxBuy(){ tone(520,0.08,'triangle',0.2); tone(780,0.1,'triangle',0.18,0.06); }
+function sfxWin(){ tone(660,0.1,'triangle',0.2); tone(990,0.12,'triangle',0.18,0.08); }
+function sfxBig(){ [523,659,784,1047,1319].forEach((f,i)=>tone(f,0.18,'sawtooth',0.16,i*0.07)); }
+function sfxLose(){ tone(200,0.2,'sawtooth',0.14); tone(150,0.25,'sawtooth',0.12,0.08); }
+function sfxCoin(){ tone(1200,0.05,'square',0.1); tone(1600,0.05,'square',0.08,0.04); }
+function sfxEvent(){ [392,523,659,784,1047].forEach((f,i)=>tone(f,0.25,'square',0.18,i*0.09)); }
+
+// ==================================================================
+// DECORATION & ATMOSPHERE
+// ==================================================================
+function buildDecor(){
+  // ceiling
+  const ceil=new THREE.Mesh(new THREE.PlaneGeometry(60,60), new THREE.MeshStandardMaterial({color:0x0a0b18, metalness:0.4, roughness:0.8, side:THREE.DoubleSide}));
+  ceil.rotation.x=Math.PI/2; ceil.position.y=8; scene.add(ceil);
+  // carpet accent
+  const carpet=new THREE.Mesh(new THREE.CircleGeometry(9,48), new THREE.MeshStandardMaterial({color:0x2a0d3a, metalness:0.2, roughness:0.9}));
+  carpet.rotation.x=-Math.PI/2; carpet.position.y=0.02; scene.add(carpet);
+  // neon columns
+  const colMat=new THREE.MeshStandardMaterial({color:0x12152e, metalness:0.6, roughness:0.3});
+  const ringColors=[0xff5db1,0x5dd6ff,0xffd34d,0x9b5dff];
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, R=11; const x=Math.cos(a)*R, z=Math.sin(a)*R;
+    const col=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,8,12), colMat); col.position.set(x,4,z); scene.add(col);
+    for(let r=0;r<4;r++){ const ring=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.05,8,20), new THREE.MeshBasicMaterial({color:ringColors[(i+r)%4]})); ring.position.set(x,1.5+r*1.7,z); ring.rotation.x=Math.PI/2; scene.add(ring); }
+  }
+  // big CASINO sign
+  const sign=makePanel(6,1.2,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='rgba(10,8,24,0.6)'; roundRect(c,0,0,w,h,30); c.fill();
+    const g=c.createLinearGradient(0,0,w,0); g.addColorStop(0,'#ffd34d'); g.addColorStop(0.5,'#ff5db1'); g.addColorStop(1,'#5dd6ff');
+    c.fillStyle=g; c.font='bold 150px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('★ CASINO ★', w/2, h/2); });
+  sign.position.set(0,6.2,-11.4); scene.add(sign);
+  // floating sparkle dots
+  const sparkGeo=new THREE.BufferGeometry(); const N=260, pos=new Float32Array(N*3);
+  for(let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*40; pos[i*3+1]=Math.random()*7+0.5; pos[i*3+2]=(Math.random()-0.5)*40; }
+  sparkGeo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const sparks=new THREE.Points(sparkGeo, new THREE.PointsMaterial({color:0xffe08a, size:0.05, transparent:true, opacity:0.7}));
+  scene.add(sparks); decorState.sparks=sparks;
+  // planters / decor cubes near machines
+  const decoMat=new THREE.MeshStandardMaterial({color:0x1a2440, metalness:0.5, roughness:0.4});
+  [[-2.2,-7.6],[2.2,-7.6],[-9,-3],[9,-1]].forEach(([x,z])=>{ const box=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),decoMat); box.position.set(x,0.25,z); scene.add(box); });
+}
+const decorState={ sparks:null };
+buildDecor();
+
+// Disco ball (hidden until disco event)
+const discoBall=new THREE.Group(); discoBall.position.set(0,6.5,-2); discoBall.visible=false; scene.add(discoBall);
+const ballCore=new THREE.Mesh(new THREE.IcosahedronGeometry(0.7,1), new THREE.MeshStandardMaterial({color:0xcfd8ff, metalness:1, roughness:0.15, emissive:0x223, emissiveIntensity:0.4, flatShading:true}));
+discoBall.add(ballCore);
+const discoLights=[0xff3b5b,0x3ddc84,0x5dd6ff,0xffd34d,0xff5db1].map((c,i)=>{ const l=new THREE.SpotLight(c,0,30,0.5,0.6); l.position.set(Math.cos(i)*4,7,Math.sin(i)*4-2); l.target.position.set(Math.cos(i*2)*6,0,Math.sin(i*2)*6-2); scene.add(l); scene.add(l.target); return l; });
+
+// Token rain pool
+const rainPool=[]; const rainMat=new THREE.MeshStandardMaterial({color:0xffd34d, emissive:0x6b5210, metalness:0.7, roughness:0.3});
+for(let i=0;i<120;i++){ const coin=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.03,12), rainMat); coin.visible=false; coin.rotation.x=Math.PI/2; scene.add(coin); rainPool.push({m:coin, vy:0, spin:0, active:false}); }
+function spawnRainCoin(){ const c=rainPool.find(c=>!c.active); if(!c) return; c.active=true; c.m.visible=true; c.m.position.set((Math.random()-0.5)*16, 8, -4+(Math.random()-0.5)*14); c.vy=-(1.5+Math.random()*1.5); c.spin=(Math.random()-0.5)*0.4; }
+
+// Event banner (announces the active admin event)
+const eventBanner=makePanel(5,0.8,(c,w,h)=>{ c.clearRect(0,0,w,h); if(!AE.name) return;
+  c.fillStyle='rgba(10,8,24,0.7)'; roundRect(c,0,0,w,h,24); c.fill();
+  c.lineWidth=6; c.strokeStyle=AE.color||'#ffd34d'; c.stroke();
+  const left=Math.max(0,(AE.until-performance.now())/1000);
+  c.fillStyle=AE.color||'#ffd34d'; c.font='bold 70px Segoe UI'; c.textAlign='center'; c.textBaseline='middle';
+  c.fillText(AE.name+'  ·  '+left.toFixed(0)+'s', w/2, h/2); });
+eventBanner.position.set(0,4.6,-8.9); eventBanner.visible=false; scene.add(eventBanner);
+
+// ==================================================================
+// ADMIN COMMANDS (received from the Discord bot over MQTT)
+// ==================================================================
+function flashScreen(color){ // brief fullscreen tint via DOM
+  const d=document.createElement('div'); d.style.cssText='position:fixed;inset:0;z-index:4;pointer-events:none;transition:opacity .6s;opacity:.5;background:'+color;
+  document.body.appendChild(d); requestAnimationFrame(()=>d.style.opacity='0'); setTimeout(()=>d.remove(),700);
+}
+function startEvent(name, color, seconds, luckMul, payMul, opts={}){
+  AE.name=name; AE.color=color; AE.luckMul=luckMul; AE.payMul=payMul; AE.until=performance.now()+seconds*1000;
+  AE.rain=!!opts.rain; AE.disco=!!opts.disco;
+  discoBall.visible=AE.disco; eventBanner.visible=true; eventBanner.userData.redraw();
+  sfxEvent(); flashScreen(color); log(`✨ EVENT: ${name} for ${seconds}s`);
+}
+function endEvent(){ AE.name=null; AE.luckMul=1; AE.payMul=1; AE.rain=false; AE.disco=false; AE.until=0; discoBall.visible=false; eventBanner.visible=false; }
+function applyAdmin(msg){
+  try{ if(typeof msg==='string') msg=JSON.parse(msg); }catch(e){ return; }
+  if(!msg||!msg.cmd) return;
+  const sec = +msg.seconds||30;
+  switch(msg.cmd){
+    case 'tokens': { const amt=+msg.amount||0; addTokens(amt); flashScreen('#ffd34d'); sfxCoin(); log(`🎁 Admin granted 🪙${amt}`); save(); refreshUpgrades(); break; }
+    case 'luckboost': { const mult=+msg.mult||2; startEvent('🍀 LUCK x'+mult, '#3ddc84', +msg.seconds||60, mult, 1); break; }
+    case 'payout': { // server-wide double-or-nothing
+      const amt=+msg.amount||100; const won=Math.random()<0.5;
+      if(won){ addTokens(amt*2); flashScreen('#3ddc84'); sfxBig(); log(`🎲 Admin payout: DOUBLED → +${amt*2}!`); }
+      else { flashScreen('#ff3b5b'); sfxLose(); log(`🎲 Admin payout: nothing… (lost ${amt})`); }
+      save(); refreshUpgrades(); break; }
+    case 'event': {
+      const name=(msg.name||'').toLowerCase();
+      if(name==='rain') startEvent('🌧️ TOKEN RAIN', '#ffd34d', sec, 1, 1.5, {rain:true});
+      else if(name==='payout'||name==='-50'||name==='nerf') startEvent('💀 -50% PAYOUT', '#ff3b5b', sec, 1, 0.5);
+      else if(name==='golden'||name==='goldenhour') startEvent('🌟 GOLDEN HOUR', '#ffcf33', sec, 2, 3);
+      else if(name==='jackpot'||name==='50x') startEvent('💎 50x LUCK & PAYOUT', '#5dd6ff', sec, 50, 50);
+      else if(name==='rainbow') startEvent('🌈 RAINBOW', '#ff5db1', sec, +msg.luck||5, +msg.payout||5);
+      else if(name==='disco') startEvent('🪩 DISCO PARTY', '#9b5dff', sec, 1.5, 1.5, {disco:true});
+      else { log('Unknown event: '+name); return; }
+      break; }
+    default: log('Unknown admin cmd: '+msg.cmd);
+  }
+}
+
+// MQTT bridge — every client subscribes; the bot publishes admin commands here.
+let mqttClient=null;
+function connectAdminBridge(){
+  if(typeof mqtt==='undefined'){ log('MQTT lib not loaded'); return; }
+  try{
+    mqttClient=mqtt.connect('wss://broker.emqx.io:8084/mqtt', { reconnectPeriod:4000, connectTimeout:8000 });
+    const topic='tokencasino/'+ADMIN_CHANNEL+'/cmd';
+    mqttClient.on('connect', ()=>{ mqttClient.subscribe(topic); log('🔗 Admin bridge connected.'); });
+    mqttClient.on('message', (t,payload)=>{ applyAdmin(payload.toString()); });
+    mqttClient.on('error', e=>{ console.error('MQTT error',e); });
+  }catch(e){ console.error('MQTT connect failed', e); }
+}
+connectAdminBridge();
+
+// Per-frame updates for events
+function stepEvents(dt){
+  const t=performance.now();
+  if(AE.name && AE.until<=t) endEvent();
+  if(eventBanner.visible){ eventBanner.userData.redraw(); eventBanner.lookAt(camera.getWorldPosition(new THREE.Vector3())); }
+  // rain
+  if(AE.rain && Math.random()<0.6) spawnRainCoin();
+  for(const c of rainPool){ if(!c.active) continue; c.m.position.y+=c.vy*dt; c.m.rotation.z+=c.spin; if(c.m.position.y<0.1){ c.active=false; c.m.visible=false; } }
+  // disco
+  if(AE.disco){ discoBall.rotation.y+=dt*1.5; const ti=t*0.004; discoLights.forEach((l,i)=>{ l.intensity=2+Math.sin(ti+i)*1.5; l.target.position.set(Math.cos(ti+i*1.3)*7,0,Math.sin(ti+i*1.7)*7-2); }); }
+  else discoLights.forEach(l=>l.intensity=0);
+  // sparkle drift
+  if(decorState.sparks){ decorState.sparks.rotation.y+=dt*0.02; }
+}
+
+// ==================================================================
 // LOCOMOTION (thumbstick)
 // ==================================================================
 let snapCooldown=0;
@@ -732,7 +886,7 @@ renderer.domElement.addEventListener('click', ()=>{
   // raycast from camera center
   raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
   const hits=raycaster.intersectObjects(interactables,false);
-  if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
+  if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ sfxClick(); h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
 });
 document.addEventListener('pointerlockchange', ()=>{ pointerLocked=document.pointerLockElement===renderer.domElement; });
 addEventListener('mousemove', e=>{ if(!pointerLocked) return; yaw-=e.movementX*0.002; pitch-=e.movementY*0.002; pitch=Math.max(-1.4,Math.min(1.4,pitch)); });
@@ -754,7 +908,7 @@ let autoAccum=0;
 const clock=new THREE.Clock();
 function animate(){
   const dt=Math.min(0.05,clock.getDelta());
-  locomotion(dt); desktopControls(dt); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt);
+  locomotion(dt); desktopControls(dt); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt); stepEvents(dt);
   // passive income
   if(S.autoLv>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum); addTokens(S.autoLv*g*Math.max(1,Math.floor(payMul()))); autoAccum-=g; save(); } }
   // pulses
