@@ -11,29 +11,21 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=VT323&display=swap" rel="stylesheet">
 <style>
-  :root{ --cyan:#00eaff; --magenta:#ff2e97; --green:#39ff14; --yellow:#ffe347; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  html,body { height:100%; overflow:hidden; background:#05030f; font-family:'VT323','Courier New',monospace; color:#cfeaff; }
-  /* CRT scanlines + vignette over everything */
-  #crt { position:fixed; inset:0; z-index:40; pointer-events:none;
-    background:repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 4px);
-    box-shadow:inset 0 0 180px rgba(0,0,0,0.8); }
+  html,body { height:100%; overflow:hidden; background:#05060a; font-family:'Segoe UI',system-ui,sans-serif; color:#fff; }
   #overlay { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    background:radial-gradient(circle at 50% 25%, #2a0a4a, #0a0420 55%, #05030f 80%); z-index:10; text-align:center; padding:24px; }
-  #overlay h1 { font-family:'Orbitron',sans-serif; font-size:46px; font-weight:800; letter-spacing:4px;
-    background:linear-gradient(90deg,var(--cyan),var(--magenta),var(--yellow)); -webkit-background-clip:text; background-clip:text; color:transparent;
-    margin-bottom:10px; text-shadow:0 0 18px rgba(255,46,151,.5); filter:drop-shadow(0 0 10px rgba(0,234,255,.5)); }
-  #overlay p { color:#9fb6d6; max-width:560px; line-height:1.5; margin-bottom:18px; font-size:19px; }
-  .info { font-size:16px; color:#6b86b0; max-width:560px; }
-  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:5; font-weight:700; font-size:20px; letter-spacing:1px;
-    background:rgba(8,4,24,.7); padding:6px 18px; border-radius:6px; border:1px solid var(--cyan); box-shadow:0 0 14px rgba(0,234,255,.35); color:#bdf3ff; }
-  #hud span { color:var(--yellow); text-shadow:0 0 8px rgba(255,227,71,.6); }
-  #log { position:fixed; bottom:10px; left:10px; z-index:5; font-size:17px; color:#7fd8ff; max-width:46vw; text-shadow:0 0 6px rgba(0,234,255,.4); }
-  button.start { font-family:'Orbitron',sans-serif; font-size:20px; padding:14px 44px; border:2px solid var(--cyan); border-radius:4px; cursor:pointer; font-weight:800; letter-spacing:2px;
-    background:linear-gradient(90deg,var(--magenta),var(--cyan)); color:#05030f; box-shadow:0 0 26px rgba(0,234,255,.55); text-transform:uppercase; }
+    background:radial-gradient(circle at 50% 30%, #1a1140, #05060a 70%); z-index:10; text-align:center; padding:24px; }
+  #overlay h1 { font-size:42px; letter-spacing:2px; background:linear-gradient(90deg,#ffd34d,#ff5db1,#5dd6ff);
+    -webkit-background-clip:text; background-clip:text; color:transparent; margin-bottom:8px; }
+  #overlay p { color:#9aa3c0; max-width:560px; line-height:1.5; margin-bottom:18px; }
+  .info { font-size:13px; color:#6b7396; max-width:560px; }
+  #hud { position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:5; font-weight:700;
+    background:rgba(10,12,24,.6); padding:8px 18px; border-radius:20px; border:1px solid #2a2f55; }
+  #hud span { color:#ffd34d; }
+  #log { position:fixed; bottom:10px; left:10px; z-index:5; font-size:12px; color:#7d86ab; max-width:40vw; }
+  button.start { font-size:20px; padding:14px 40px; border:none; border-radius:30px; cursor:pointer; font-weight:700;
+    background:linear-gradient(90deg,#ffd34d,#ff5db1); color:#1a0b2e; box-shadow:0 8px 30px rgba(255,93,177,.4); }
   button.start:active { transform:scale(.97); }
   #crosshair { position:fixed; top:50%; left:50%; width:22px; height:22px; margin:-11px 0 0 -11px; z-index:6;
     pointer-events:none; display:none; }
@@ -52,7 +44,6 @@
 </style>
 </head>
 <body>
-<div id="crt"></div>
 <div id="hud">🪙 <span id="tok">0</span> tokens &nbsp;|&nbsp; 🍀 Luck Lv<span id="luckLv">1</span> &nbsp;|&nbsp; 💰 Payout x<span id="payMul">1.0</span></div>
 <div id="log"></div>
 <div id="crosshair"></div>
@@ -124,7 +115,7 @@ const PLAYER_WEBHOOK_URL = '';
 function webhookSend(url, content){ if(!url) return; try{ const fd=new FormData(); fd.append('content', content); fetch(url,{method:'POST',mode:'no-cors',body:fd}); }catch(e){} }
 function notifyPresence(){
   const url = PLAYER_WEBHOOK_URL || DISCORD_WEBHOOK_URL;
-  webhookSend(url, `🟢 **${S.username}** entered the casino  ·  id \`${DEVICE_ID}\`  ·  🪙${Math.floor(S.tokens)}`);
+  webhookSend(url, `🟢 **${S.username}** entered the casino  ·  id \`${DEVICE_ID}\`  ·  🪙${fmt(S.tokens)}`);
 }
 const LEADERBOARD_SIZE = 10; // a win that ranks in the top N highest payouts ever triggers a ping
 const MIN_NOTIFY = 250;      // ...but only if it's also at least this big (kills early-game spam)
@@ -176,14 +167,17 @@ const payEl = document.getElementById('payMul');
 const logEl = document.getElementById('log');
 let logLines = [];
 function log(msg){ logLines.push(msg); if(logLines.length>4) logLines.shift(); logEl.innerHTML = logLines.join('<br>'); }
-function updateHUD(){ tokEl.textContent = Math.floor(S.tokens).toLocaleString(); luckEl.textContent=S.luckLv; payEl.textContent=payMul().toFixed(1); }
+// compact number formatting: 1500 -> "1.5K", 2_300_000 -> "2.3M", etc.
+const NUM_SUFFIX=['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','De','Ud','Dd'];
+function fmt(n){ n=Math.floor(n); if(Math.abs(n)<1000) return n.toString(); let i=0,v=n; while(Math.abs(v)>=1000 && i<NUM_SUFFIX.length-1){ v/=1000; i++; } let s=(Math.abs(v)>=100?v.toFixed(0):v.toFixed(2)); s=s.replace(/\.?0+$/,''); return s+NUM_SUFFIX[i]; }
+function updateHUD(){ tokEl.textContent = fmt(S.tokens); luckEl.textContent=S.luckLv; payEl.textContent=payMul().toFixed(1); }
 function addTokens(n){ S.tokens += n; updateHUD(); }
 updateHUD();
 
 // ---------- Three setup ----------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0420);
-scene.fog = new THREE.Fog(0x14062e, 14, 46);
+scene.background = new THREE.Color(0x05060a);
+scene.fog = new THREE.Fog(0x05060a, 12, 40);
 
 const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.05, 200);
 const renderer = new THREE.WebGLRenderer({ antialias:true });
@@ -206,26 +200,13 @@ scene.add(new THREE.HemisphereLight(0x8899ff, 0x221133, 0.7));
 const key = new THREE.DirectionalLight(0xffffff, 0.8);
 key.position.set(5,10,5); key.castShadow=true; scene.add(key);
 function neon(x,y,z,c){ const l=new THREE.PointLight(c,1.4,18); l.position.set(x,y,z); scene.add(l); return l; }
-neon(-6,4,-6,0xff2e97); neon(6,4,-6,0x00eaff); neon(0,5,-10,0xff2e97); neon(0,4,6,0x00eaff);
+neon(-6,4,-6,0xff5db1); neon(6,4,-6,0x5dd6ff); neon(0,5,-10,0xffd34d); neon(0,4,6,0x9b5dff);
 
-// Floor — dark chrome with a glowing magenta/cyan grid (retrowave)
-const floorGeo = new THREE.PlaneGeometry(80,80);
-const floorMat = new THREE.MeshStandardMaterial({ color:0x07021a, metalness:0.85, roughness:0.25 });
+// Floor
+const floorGeo = new THREE.PlaneGeometry(60,60);
+const floorMat = new THREE.MeshStandardMaterial({ color:0x0a0c1a, metalness:0.6, roughness:0.4 });
 const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
-const grid = new THREE.GridHelper(80,80,0x00eaff,0xff2e97); grid.position.y=0.012; grid.material.transparent=true; grid.material.opacity=0.5; scene.add(grid);
-
-// Retrowave sun + sky behind the casino
-const sunCanvas=document.createElement('canvas'); sunCanvas.width=sunCanvas.height=256;
-(()=>{ const x=sunCanvas.getContext('2d'); const g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#ffe347'); g.addColorStop(0.5,'#ff7ad9'); g.addColorStop(1,'#ff2e97'); x.fillStyle=g; x.beginPath(); x.arc(128,128,120,0,7); x.fill();
-  x.globalCompositeOperation='destination-out'; for(let i=0;i<8;i++){ const yy=150+i*14; x.fillRect(0,yy,256,7-i*0.6+2); } })();
-const sunTex=new THREE.CanvasTexture(sunCanvas);
-const sun=new THREE.Mesh(new THREE.PlaneGeometry(16,16), new THREE.MeshBasicMaterial({map:sunTex,transparent:true,depthWrite:false}));
-sun.position.set(0,7,-30); scene.add(sun);
-const skyGeo=new THREE.PlaneGeometry(120,40);
-const skyCanvas=document.createElement('canvas'); skyCanvas.width=8; skyCanvas.height=256;
-(()=>{ const x=skyCanvas.getContext('2d'); const g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#1a0640'); g.addColorStop(0.7,'#3a0a5a'); g.addColorStop(1,'#0a0420'); x.fillStyle=g; x.fillRect(0,0,8,256); })();
-const sky=new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(skyCanvas),depthWrite:false}));
-sky.position.set(0,10,-32); scene.add(sky);
+const grid = new THREE.GridHelper(60,60,0x2a2f55,0x161a30); grid.position.y=0.01; scene.add(grid);
 
 // ---------- Interactables ----------
 const interactables = []; // {mesh, onTap, hover()}
@@ -271,60 +252,64 @@ const upgradeDefs = [
 const upgradeByKey = Object.fromEntries(upgradeDefs.map(d=>[d.key,d]));
 function upCost(def){ const lv=S[def.key]||0; return Math.floor(def.base*Math.pow(def.grow, lv-(def.start||0))); }
 function isUnlocked(def){ return !def.req || (S[def.req.key]||0) >= def.req.lv; }
-function nodePos(def){ return { x:(def.gx-1)*2.45, y:3.5-def.gy*1.0 }; }
+// ground position of each node — a branching tree laid out on the floor behind spawn
+function nodePos(def){ return { x:(def.gx-1)*3.0, z:6 + def.gy*2.6 }; }
 
-const wall = new THREE.Group();
-wall.position.set(0, 0, 8); wall.rotation.y = Math.PI; scene.add(wall); // behind the spawn point
-const bb = new THREE.Mesh(new THREE.PlaneGeometry(7.9,5.0), new THREE.MeshStandardMaterial({color:0x0a0420, metalness:0.5, roughness:0.5}));
-bb.position.set(0,2.0,-0.06); wall.add(bb);
-// neon frame around the tree
-const frame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(7.9,5.0)), new THREE.LineBasicMaterial({color:0x00eaff}));
-frame.position.set(0,2.0,-0.04); wall.add(frame);
-const wallTitle = makePanel(6,0.7,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#00eaff'; c.font='bold 64px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('▚ UPGRADE.SYS ▚', w/2, h/2); });
-wallTitle.position.set(0,4.25,0); wall.add(wallTitle);
+const treeGroup = new THREE.Group(); scene.add(treeGroup);
+// entrance sign
+const treeSign = makePanel(2.4,0.5,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 70px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('⬆ UPGRADES', w/2,h/2); });
+treeSign.position.set(0,2.4,4.7); treeSign.rotation.y=Math.PI; treeGroup.add(treeSign);
 
-// connector lines between prerequisites (drawn first, behind blocks)
-const connectors=[];
-upgradeDefs.forEach(def=>{ if(!def.req) return; const a=nodePos(upgradeByKey[def.req.key]), b=nodePos(def);
-  const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(a.x,a.y,0.0),new THREE.Vector3(b.x,b.y,0.0)]);
-  const line=new THREE.Line(g, new THREE.LineBasicMaterial({color:0x244, transparent:true})); wall.add(line);
-  connectors.push({line, def}); });
-function refreshConnectors(){ connectors.forEach(c=>{ c.line.material.color.set(isUnlocked(c.def)?0x00eaff:0x223355); }); }
+// branches along the ground connecting each upgrade to its prerequisite
+const branches=[];
+function colorHex(s){ return new THREE.Color(s); }
+upgradeDefs.forEach(def=>{ if(!def.req) return;
+  const a=nodePos(upgradeByKey[def.req.key]), b=nodePos(def);
+  const dx=b.x-a.x, dz=b.z-a.z, len=Math.hypot(dx,dz);
+  const mat=new THREE.MeshStandardMaterial({color:0x2a2f55, emissive:0x000000});
+  const bar=new THREE.Mesh(new THREE.BoxGeometry(len,0.06,0.16), mat);
+  bar.position.set((a.x+b.x)/2, 0.06, (a.z+b.z)/2); bar.rotation.y=Math.atan2(-dz,dx);
+  treeGroup.add(bar); branches.push({bar,def,baseColor:def.color});
+});
+function refreshConnectors(){ branches.forEach(o=>{ const on=isUnlocked(o.def); o.bar.material.color.set(on?o.baseColor:'#1c2038'); o.bar.material.emissive.set(on?o.baseColor:'#000000'); o.bar.material.emissiveIntensity=on?0.35:0; }); }
 
-const upBlocks = [];
+// each node = a pedestal box on the floor + a sign (tap to buy) facing the player
+const upBlocks=[];
 upgradeDefs.forEach((def)=>{
   const p=nodePos(def);
-  const block = makePanel(2.2,0.92, drawUpgrade(def));
-  block.position.set(p.x, p.y, 0.02);
-  block.userData.def = def; block.userData.flash = 0;
-  wall.add(block);
-  registerInteractable(block, ()=>buyUpgrade(def, block));
-  upBlocks.push(block);
+  const ped=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.5,1.0), new THREE.MeshStandardMaterial({color:0x14182e, metalness:0.5, roughness:0.5}));
+  ped.position.set(p.x,0.25,p.z); ped.castShadow=true; treeGroup.add(ped);
+  const cap=new THREE.Mesh(new THREE.BoxGeometry(1.04,0.06,1.04), new THREE.MeshStandardMaterial({color:def.color, emissive:def.color, emissiveIntensity:0.5}));
+  cap.position.set(p.x,0.53,p.z); treeGroup.add(cap); def._cap=cap;
+  const sign=makePanel(1.3,1.0, drawUpgrade(def));
+  sign.position.set(p.x,1.35,p.z); sign.rotation.y=Math.PI;
+  sign.userData.def=def; sign.userData.ped=ped;
+  treeGroup.add(sign);
+  registerInteractable(sign, ()=>buyUpgrade(def, sign));
+  upBlocks.push(sign);
 });
 function drawUpgrade(def){
   return (ctx,w,h)=>{
     const lv=S[def.key]||0, cost=upCost(def), unlocked=isUnlocked(def), afford=S.tokens>=cost && unlocked;
     ctx.clearRect(0,0,w,h);
-    ctx.fillStyle = !unlocked? '#0a0a12' : (afford? '#160a2e':'#0d0820');
-    roundRect(ctx,5,5,w-10,h-10,16); ctx.fill();
-    ctx.lineWidth=5; ctx.strokeStyle = unlocked? def.color : '#33304a'; ctx.stroke();
+    ctx.fillStyle = !unlocked? '#0c0e18' : (afford? '#181c34':'#10131f');
+    roundRect(ctx,6,6,w-12,h-12,22); ctx.fill();
+    ctx.lineWidth=6; ctx.strokeStyle = unlocked? def.color : '#3a3f55'; ctx.stroke();
+    ctx.textAlign='center';
     if(!unlocked){
       const rq=upgradeByKey[def.req.key];
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.font='52px "Courier New",monospace'; ctx.fillStyle='#5a6080'; ctx.fillText('🔒', 60, h/2);
-      ctx.font='bold 30px "Courier New",monospace'; ctx.fillStyle='#7d86ab'; ctx.textAlign='left';
-      ctx.fillText('LOCKED', 110, h/2-22);
-      ctx.font='22px "Courier New",monospace'; ctx.fillText('need '+rq.name+' Lv'+def.req.lv, 110, h/2+16);
+      ctx.textBaseline='middle';
+      ctx.font='100px Segoe UI'; ctx.fillText('🔒', w/2, h*0.4);
+      ctx.fillStyle='#9aa3c0'; ctx.font='bold 40px Segoe UI'; ctx.fillText('LOCKED', w/2, h*0.66);
+      ctx.fillStyle='#7d86ab'; ctx.font='28px Segoe UI'; ctx.fillText('Need '+rq.name+' Lv'+def.req.lv, w/2, h*0.78);
       return;
     }
-    ctx.textAlign='left'; ctx.textBaseline='top';
-    ctx.font='52px "Courier New",monospace'; ctx.fillText(def.icon, 18, 18);
-    ctx.fillStyle=def.color; ctx.font='bold 36px "Courier New",monospace'; ctx.fillText(def.name, 86, 22);
-    ctx.fillStyle='#9aa3c0'; ctx.font='22px "Courier New",monospace'; ctx.fillText(def.desc(), 20, 86);
-    ctx.fillStyle='#fff'; ctx.font='bold 26px "Courier New",monospace'; ctx.fillText('Lv '+lv, 20, h-44);
-    ctx.textAlign='right';
-    ctx.fillStyle= afford? '#ffe347':'#5a6080'; ctx.font='bold 32px "Courier New",monospace';
-    ctx.fillText('🪙'+cost.toLocaleString(), w-20, h-46);
+    ctx.textBaseline='top';
+    ctx.font='72px Segoe UI'; ctx.fillText(def.icon, w/2, 24);              // icon
+    ctx.fillStyle=def.color; ctx.font='bold 48px Segoe UI'; ctx.fillText(def.name, w/2, 110);  // title
+    ctx.fillStyle='#c7d0e8'; ctx.font='30px Segoe UI'; ctx.fillText(def.desc(), w/2, 178);     // boost
+    ctx.fillStyle='#fff'; ctx.font='bold 34px Segoe UI'; ctx.fillText('Lv '+lv, w/2, h-130);
+    ctx.fillStyle= afford? '#ffd34d':'#6a7196'; ctx.font='bold 44px Segoe UI'; ctx.fillText('🪙 '+fmt(cost), w/2, h-78);
   };
 }
 function buyUpgrade(def, block){
@@ -333,7 +318,7 @@ function buyUpgrade(def, block){
   if(S.tokens>=cost){
     S.tokens-=cost; S[def.key]=(S[def.key]||0)+1; updateHUD(); save();
     log(`Bought ${def.name} → Lv ${S[def.key]}`);
-    block.userData.flash=1; pulse(block,0x39ff14); sfxBuy();
+    block.userData.flash=1; pulse(block,0x3ddc84); sfxBuy();
   } else { log(`Not enough tokens for ${def.name}`); pulse(block,0xff3b5b); sfxLose(); }
   refreshUpgrades();
 }
@@ -344,6 +329,28 @@ const critMult   = () => 5 + (S.megaCritLv||0)*2;
 const wheelLuck  = () => 1 + (S.wheelLv||0)*0.15;
 const diceBonus  = () => (S.diceLv||0)*0.025;
 const scratchLuck= () => 1 + (S.scratchLv||0)*0.25;
+
+// ==================================================================
+// BET SIZING — raise/lower a global bet multiplier (cost & payout scale)
+// ==================================================================
+const BET_OPTIONS=[1,2,5,10,25,50,100,250,1000];
+if(!S.betMul || BET_OPTIONS.indexOf(S.betMul)<0) S.betMul=1;
+function bet(){ return S.betMul||1; }
+const betLabels=[]; // machine cost labels that redraw when bet changes
+function refreshBet(){ betDisplay.userData.redraw(); betLabels.forEach(b=>b.userData.redraw()); }
+function cycleBet(dir){
+  // raising bet you can't afford the smallest game is allowed; it's just a multiplier
+  let i=BET_OPTIONS.indexOf(S.betMul); i=(i+dir+BET_OPTIONS.length)%BET_OPTIONS.length;
+  S.betMul=BET_OPTIONS[i]; save(); refreshBet(); sfxClick();
+}
+const betConsole=new THREE.Group(); betConsole.position.set(0,0.95,1.6); scene.add(betConsole);
+const betLabelTop=makePanel(1.6,0.3,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 60px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('💵 BET SIZE', w/2,h/2); });
+betLabelTop.position.set(0,0.42,0); betConsole.add(betLabelTop);
+const betDisplay=makePanel(1.5,0.55,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='rgba(8,4,24,0.88)'; roundRect(c,4,4,w-8,h-8,16); c.fill(); c.lineWidth=6; c.strokeStyle='#ffd34d'; c.stroke(); c.fillStyle='#ffe347'; c.font='bold 74px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('x'+fmt(bet()), w/2,h/2); });
+betDisplay.position.set(0,0,0); betConsole.add(betDisplay);
+function betArrow(sym,col){ return makePanel(0.5,0.5,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle=col; roundRect(c,4,4,w-8,h-8,14); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 80px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(sym,w/2,h/2+4); }); }
+const betDown=betArrow('−','#ff5db1'); betDown.position.set(-1.02,0,0); betConsole.add(betDown); registerInteractable(betDown, ()=>cycleBet(-1));
+const betUp=betArrow('+','#3ddc84'); betUp.position.set(1.02,0,0); betConsole.add(betUp); registerInteractable(betUp, ()=>cycleBet(1));
 
 // pulse animation helper
 const pulses=[];
@@ -357,7 +364,7 @@ const statsPanel = makePanel(0.9,0.5,(c,w,h)=>{
   c.lineWidth=4; c.strokeStyle='#2a2f55'; c.stroke();
   c.textAlign='left'; c.textBaseline='middle';
   c.fillStyle='#ffd34d'; c.font='bold 48px Segoe UI';
-  c.fillText('🪙 '+Math.floor(S.tokens).toLocaleString(), 26, 56);
+  c.fillText('🪙 '+fmt(S.tokens), 26, 56);
   c.font='30px Segoe UI'; c.fillStyle='#3ddc84'; c.fillText('🍀 Luck Lv'+S.luckLv, 26, 130);
   c.fillStyle='#ffd34d'; c.fillText('💰 Payout x'+payMul().toFixed(1), 26, 178);
   c.fillStyle='#ff5db1'; c.fillText('💥 Crit '+(critChance()*100|0)+'%', 270, 130);
@@ -394,7 +401,7 @@ const slotScreen = makePanel(2.2,1.1,(c,w,h)=>{
   for(let i=0;i<3;i++){ c.fillText(slotReels[i], w*(i+0.5)/3, h/2); }
 });
 slotScreen.position.set(0,2.2,0.52); slotGroup.add(slotScreen);
-const slotBtn = makePanel(1.6,0.55,(c,w,h)=>{ c.fillStyle='#ff5db1'; roundRect(c,0,0,w,h,30); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN  🪙10', w/2,h/2); });
+const slotBtn = makePanel(1.6,0.55,(c,w,h)=>{ c.fillStyle='#ff5db1'; roundRect(c,0,0,w,h,30); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN 🪙'+fmt(10*bet()), w/2,h/2); }); betLabels.push(slotBtn);
 slotBtn.position.set(0,1.1,0.52); slotGroup.add(slotBtn);
 const slotLabel = makePanel(2.4,0.45,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#5dd6ff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎰 SLOTS', w/2,h/2); });
 slotLabel.position.set(0,3.55,0.52); slotGroup.add(slotLabel);
@@ -413,8 +420,8 @@ function weightedSym(){
 }
 function spinSlots(){
   if(slotSpinning) return;
-  if(S.tokens<10){ log('Need 🪙10 to spin'); return; }
-  addTokens(-10); save(); slotSpinning=true;
+  const cost=10*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' to spin'); return; }
+  addTokens(-cost); save(); slotSpinning=true;
   let ticks=0; const final=[weightedSym(),weightedSym(),weightedSym()];
   const iv=setInterval(()=>{
     ticks++;
@@ -427,9 +434,9 @@ function resolveSlots(r){
   let win=0;
   if(r[0]===r[1]&&r[1]===r[2]) win = SYM_PAY[r[0]]*10;
   else if(r[0]===r[1]||r[1]===r[2]||r[0]===r[2]){ const s = r[0]===r[1]?r[0]:(r[1]===r[2]?r[1]:r[0]); win = SYM_PAY[s]; }
-  win = Math.floor(win*payMul());
+  win = Math.floor(win*payMul()*bet());
   if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
-  if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${win}`); pulse(slotScreen,0xffd34d); reportWin(win,'Slots'); }
+  if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${fmt(win)}`); pulse(slotScreen,0xffd34d); reportWin(win,'Slots'); }
   else log(`🎰 ${r.join(' ')} → no win`);
   save(); refreshUpgrades();
 }
@@ -451,15 +458,15 @@ for(let i=0;i<PLINKO_MULT.length;i++){
   const lab=makePanel(0.34,0.4,(c,w,h)=>{ c.fillStyle = m>=2?'#ffd34d':(m>=1?'#5dd6ff':'#3a3f66'); roundRect(c,2,2,w-4,h-4,8); c.fill(); c.fillStyle='#0a0c1a'; c.font='bold 44px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m+'x',w/2,h/2); });
   lab.position.set((i-(PLINKO_MULT.length-1)/2)*0.36, 0.45, 0.2); plinkoGroup.add(lab); plabels.push(lab);
 }
-const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙20',w/2,h/2); });
+const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙'+fmt(20*bet()),w/2,h/2); }); betLabels.push(dropBtn);
 dropBtn.position.set(0,0,0.2); plinkoGroup.add(dropBtn);
 registerInteractable(dropBtn, dropPlinko);
 const pLabel = makePanel(2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#9b5dff'; c.font='bold 58px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🔵 PLINKO',w/2,h/2); });
 pLabel.position.set(0,4.4,0.2); plinkoGroup.add(pLabel);
 const balls=[];
 function dropPlinko(){
-  if(S.tokens<20){ log('Need 🪙20 for plinko'); return; }
-  addTokens(-20); save();
+  { const cost=20*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' for plinko'); return; }
+  addTokens(-cost); save(); }
   const ball=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,12), new THREE.MeshStandardMaterial({color:0xffd34d, emissive:0x665010}));
   ball.position.set((Math.random()-0.5)*0.2, 3.9, 0.25);
   // luck biases drift toward center high slots
@@ -476,9 +483,9 @@ function stepBalls(dt){
     if(b.position.x<-1.45){b.position.x=-1.45;b.userData.vx*=-0.5;} if(b.position.x>1.45){b.position.x=1.45;b.userData.vx*=-0.5;}
     if(b.position.y<=0.5){
       let idx=Math.round(b.position.x/0.36 + (PLINKO_MULT.length-1)/2); idx=Math.max(0,Math.min(PLINKO_MULT.length-1,idx));
-      let win=Math.floor(20*PLINKO_MULT[idx]*payMul());
+      let win=Math.floor(20*PLINKO_MULT[idx]*payMul()*bet());
       if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
-      addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${win}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko');
+      addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${fmt(win)}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko');
       plinkoGroup.remove(b); balls.splice(i,1); save(); refreshUpgrades();
     }
   }
@@ -494,13 +501,13 @@ const scratchPanel=makePanel(2.2,1.6,drawScratch);
 scratchPanel.position.set(0,2,0); scratchGroup.add(scratchPanel);
 const sLabel=makePanel(2.4,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#3ddc84'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎟️ SCRATCHERS',w/2,h/2); });
 sLabel.position.set(0,3.1,0); scratchGroup.add(sLabel);
-const buyTicket=makePanel(2,0.5,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#06210f'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('NEW TICKET 🪙25',w/2,h/2); });
+const buyTicket=makePanel(2,0.5,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#06210f'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('TICKET 🪙'+fmt(25*bet()),w/2,h/2); }); betLabels.push(buyTicket);
 buyTicket.position.set(0,1.0,0); scratchGroup.add(buyTicket);
 registerInteractable(buyTicket, newTicket);
 registerInteractable(scratchPanel, (hit)=>scratchAt(hit));
 function newTicket(){
-  if(S.tokens<25){ log('Need 🪙25 for a ticket'); return; }
-  addTokens(-25); save();
+  { const cost=25*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' for a ticket'); return; }
+  addTokens(-cost); save(); }
   // clean prize values shown on each cell; match 3 of a value to win it
   const prizes=[0,0,0,10,10,25,25,50,100,250];
   const cells=[]; for(let i=0;i<9;i++){ cells.push(prizes[(Math.random()*prizes.length)|0]); }
@@ -524,9 +531,9 @@ function scratchAt(hit){
     const counts={}; scratchState.cells.forEach(v=>counts[v]=(counts[v]||0)+1);
     let base=0; for(const v in counts){ if(+v>0) base += (+v) * Math.floor(counts[v]/3); }
     // apply payout multiplier once, then crit, rounded to a clean number
-    let win = Math.round(base * payMul() / 5) * 5;
+    let win = Math.round(base * payMul() * bet() / 5) * 5;
     if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
-    if(win>0){ addTokens(win); log(`🎟️ Ticket → +${win}`); pulse(scratchPanel,0x3ddc84); reportWin(win,'Scratcher'); }
+    if(win>0){ addTokens(win); log(`🎟️ Ticket → +${fmt(win)}`); pulse(scratchPanel,0x3ddc84); reportWin(win,'Scratcher'); }
     else log('🎟️ No match — better luck next ticket.');
     save(); refreshUpgrades();
   }
@@ -554,7 +561,7 @@ const wheelDisc=makePanel(2.4,2.4,(c,w,h)=>{
   }
 });
 wheelDisc.position.set(0,2.4,0); wheelGroup.add(wheelDisc);
-const wheelBtn=makePanel(1.8,0.5,(c,w,h)=>{ c.fillStyle='#ffd34d'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN WHEEL 🪙30',w/2,h/2); });
+const wheelBtn=makePanel(1.8,0.5,(c,w,h)=>{ c.fillStyle='#ffd34d'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('WHEEL 🪙'+fmt(30*bet()),w/2,h/2); }); betLabels.push(wheelBtn);
 wheelBtn.position.set(0,0.9,0.1); wheelGroup.add(wheelBtn);
 const wLabel=makePanel(2.2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎡 WHEEL',w/2,h/2); });
 wLabel.position.set(0,3.85,0); wheelGroup.add(wLabel);
@@ -563,8 +570,8 @@ const ptr=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.25,3), new THREE.MeshStand
 registerInteractable(wheelBtn, spinWheel);
 let wheelSpin=null;
 function spinWheel(){
-  if(wheelSpin){ return; } if(S.tokens<30){ log('Need 🪙30 for wheel'); return; }
-  addTokens(-30); save();
+  if(wheelSpin){ return; } { const cost=30*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' for wheel'); return; }
+  addTokens(-cost); save(); }
   const n=WHEEL_SEGMENTS.length;
   // luck biases landing on higher segments
   let target=(Math.random()*n)|0; if(Math.random()<0.15*luckBonus()*wheelLuck()){ // re-roll toward a winner
@@ -575,8 +582,8 @@ function spinWheel(){
 function stepWheel(dt){
   if(!wheelSpin) return; wheelSpin.t+=dt; const p=Math.min(1,wheelSpin.t/wheelSpin.dur); const e=1-Math.pow(1-p,3);
   wheelDisc.rotation.z = wheelSpin.from+(wheelSpin.to-wheelSpin.from)*e;
-  if(p>=1){ const m=WHEEL_SEGMENTS[wheelSpin.seg]; let win=Math.floor(30*m*payMul()); if(win>0&&Math.random()<critChance()){win*=critMult();log('💥 CRIT!');}
-    if(win>0){ addTokens(win); log(`🎡 ${m}x → +${win}`); pulse(wheelDisc,0xffd34d); reportWin(win,'Wheel');} else log('🎡 Lost the spin');
+  if(p>=1){ const m=WHEEL_SEGMENTS[wheelSpin.seg]; let win=Math.floor(30*m*payMul()*bet()); if(win>0&&Math.random()<critChance()){win*=critMult();log('💥 CRIT!');}
+    if(win>0){ addTokens(win); log(`🎡 ${m}x → +${fmt(win)}`); pulse(wheelDisc,0xffd34d); reportWin(win,'Wheel');} else log('🎡 Lost the spin');
     wheelSpin=null; save(); refreshUpgrades(); }
 }
 
@@ -587,18 +594,18 @@ const diceGroup=new THREE.Group(); diceGroup.position.set(-7,0,-1); diceGroup.ro
 const dLabel=makePanel(2,0.4,(c,w,h)=>{c.clearRect(0,0,w,h);c.fillStyle='#ff9b3d';c.font='bold 54px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('🎲 DOUBLE',w/2,h/2);});
 dLabel.position.set(0,2.7,0); diceGroup.add(dLabel);
 let dicePot=0;
-const diceDisp=makePanel(2,0.9,(c,w,h)=>{ c.fillStyle='#1a1330'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('Pot: 🪙'+dicePot, w/2,h/2); });
+const diceDisp=makePanel(2,0.9,(c,w,h)=>{ c.fillStyle='#1a1330'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('Pot: 🪙'+fmt(dicePot), w/2,h/2); });
 diceDisp.position.set(0,2,0); diceGroup.add(diceDisp);
-const betBtn=makePanel(0.95,0.5,(c,w,h)=>{c.fillStyle='#5dd6ff';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#06210f';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('BET 🪙25',w/2,h/2);});
+const betBtn=makePanel(0.95,0.5,(c,w,h)=>{c.fillStyle='#5dd6ff';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#06210f';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('BET 🪙'+fmt(25*bet()),w/2,h/2);}); betLabels.push(betBtn);
 betBtn.position.set(-0.52,1.2,0); diceGroup.add(betBtn);
 const flipBtn=makePanel(0.95,0.5,(c,w,h)=>{c.fillStyle='#ff5db1';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#1a0b2e';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('DOUBLE',w/2,h/2);});
 flipBtn.position.set(0.52,1.2,0); diceGroup.add(flipBtn);
 const cashBtn=makePanel(2,0.4,(c,w,h)=>{c.fillStyle='#3ddc84';roundRect(c,0,0,w,h,20);c.fill();c.fillStyle='#06210f';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('CASH OUT',w/2,h/2);});
 cashBtn.position.set(0,0.65,0); diceGroup.add(cashBtn);
-registerInteractable(betBtn, ()=>{ if(dicePot>0){log('Resolve current pot first');return;} if(S.tokens<25){log('Need 🪙25');return;} addTokens(-25); dicePot=25; diceDisp.userData.redraw(); log('🎲 Pot started at 25. Double or cash.'); save(); });
+registerInteractable(betBtn, ()=>{ if(dicePot>0){log('Resolve current pot first');return;} { const cost=25*bet(); if(S.tokens<cost){log('Need 🪙'+fmt(cost));return;} addTokens(-cost); dicePot=cost; } diceDisp.userData.redraw(); log('🎲 Pot started at 🪙'+fmt(dicePot)+'. Double or cash.'); save(); });
 registerInteractable(flipBtn, ()=>{ if(dicePot<=0){log('Place a bet first');return;}
-  const winP=Math.min(0.9, 0.5*Math.min(1.3,luckBonus()) + diceBonus()); if(Math.random()<winP){ dicePot=Math.floor(dicePot*2); log('🎲 Won! Pot doubled to '+dicePot); pulse(diceDisp,0x3ddc84);} else { log('🎲 Busted! Lost pot.'); dicePot=0; pulse(diceDisp,0xff3b5b);} diceDisp.userData.redraw(); save(); });
-registerInteractable(cashBtn, ()=>{ if(dicePot<=0){log('Nothing to cash');return;} addTokens(dicePot); log('🎲 Cashed out 🪙'+dicePot); reportWin(dicePot,'Double-or-Nothing'); dicePot=0; diceDisp.userData.redraw(); save(); refreshUpgrades(); });
+  const winP=Math.min(0.9, 0.5*Math.min(1.3,luckBonus()) + diceBonus()); if(Math.random()<winP){ dicePot=Math.floor(dicePot*2); log('🎲 Won! Pot doubled to 🪙'+fmt(dicePot)); pulse(diceDisp,0x3ddc84);} else { log('🎲 Busted! Lost pot.'); dicePot=0; pulse(diceDisp,0xff3b5b);} diceDisp.userData.redraw(); save(); });
+registerInteractable(cashBtn, ()=>{ if(dicePot<=0){log('Nothing to cash');return;} addTokens(dicePot); log('🎲 Cashed out 🪙'+fmt(dicePot)); reportWin(dicePot,'Double-or-Nothing'); dicePot=0; diceDisp.userData.redraw(); save(); refreshUpgrades(); });
 
 // ==================================================================
 // CONTROLLERS + RAY INTERACTION
@@ -978,12 +985,12 @@ function applyAdmin(msg){
     case 'unmute':{ VOICE.forced=false; log('🎤 An admin unmuted you.'); break; }
     case 'rename':{ const nm=(msg.name||'').trim().slice(0,16); if(nm){ const old=S.username; S.username=nm; save(); log('✏️ An admin renamed you: '+old+' → '+nm); const ni=document.getElementById('nameInput'); if(ni) ni.value=nm; } break; }
     case 'chat': case 'say': { showAnnouncement(msg.text||msg.message||''); break; }
-    case 'tokens': { const amt=+msg.amount||0; addTokens(amt); flashScreen('#ffd34d'); sfxCoin(); log(`🎁 Admin granted 🪙${amt}`); save(); refreshUpgrades(); break; }
+    case 'tokens': { const amt=+msg.amount||0; addTokens(amt); flashScreen('#ffd34d'); sfxCoin(); log(`🎁 Admin granted 🪙${fmt(amt)}`); save(); refreshUpgrades(); break; }
     case 'luckboost': { const mult=+msg.mult||2; startEvent('🍀 LUCK x'+mult, '#3ddc84', +msg.seconds||60, mult, 1); break; }
     case 'payout': { // server-wide double-or-nothing
       const amt=+msg.amount||100; const won=Math.random()<0.5;
-      if(won){ addTokens(amt*2); flashScreen('#3ddc84'); sfxBig(); log(`🎲 Admin payout: DOUBLED → +${amt*2}!`); }
-      else { flashScreen('#ff3b5b'); sfxLose(); log(`🎲 Admin payout: nothing… (lost ${amt})`); }
+      if(won){ addTokens(amt*2); flashScreen('#3ddc84'); sfxBig(); log(`🎲 Admin payout: DOUBLED → +${fmt(amt*2)}!`); }
+      else { flashScreen('#ff3b5b'); sfxLose(); log(`🎲 Admin payout: nothing… (lost ${fmt(amt)})`); }
       save(); refreshUpgrades(); break; }
     case 'event': {
       const name=(msg.name||'').toLowerCase();
