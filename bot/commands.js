@@ -34,4 +34,9 @@ export const commands = [
     .setName('payout')
     .setDescription('Give everyone a double-or-nothing payout')
     .addIntegerOption(o => o.setName('amount').setDescription('Stake amount (50/50 to double it)').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('say')
+    .setDescription('Broadcast an announcement to everyone in the casino')
+    .addStringOption(o => o.setName('message').setDescription('What to say').setRequired(true)),
 ].map(c => c.toJSON());

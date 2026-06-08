@@ -780,6 +780,22 @@ const eventBanner=makePanel(5,0.8,(c,w,h)=>{ c.clearRect(0,0,w,h); if(!AE.name) 
   c.fillText(AE.name+'  ·  '+left.toFixed(0)+'s', w/2, h/2); });
 eventBanner.position.set(0,4.6,-8.9); eventBanner.visible=false; scene.add(eventBanner);
 
+// Announcement banner (admin chat messages)
+let announceText='', announceUntil=0;
+const announcePanel=makePanel(5,1.4,(c,w,h)=>{ c.clearRect(0,0,w,h); if(!announceText) return;
+  c.fillStyle='rgba(10,8,24,0.82)'; roundRect(c,0,0,w,h,28); c.fill();
+  c.lineWidth=6; c.strokeStyle='#5dd6ff'; c.stroke();
+  c.fillStyle='#5dd6ff'; c.font='bold 34px Segoe UI'; c.textAlign='center'; c.textBaseline='top'; c.fillText('📢 ANNOUNCEMENT', w/2, 24);
+  c.fillStyle='#fff'; c.font='bold 46px Segoe UI'; c.textBaseline='middle';
+  // word-wrap
+  const words=announceText.split(' '); let line='', y=h*0.55; const maxW=w-60, lines=[];
+  for(const wd of words){ const test=line?line+' '+wd:wd; if(c.measureText(test).width>maxW && line){ lines.push(line); line=wd; } else line=test; }
+  if(line) lines.push(line);
+  const startY=h*0.5 - (lines.length-1)*30; lines.forEach((ln,i)=>c.fillText(ln, w/2, startY + i*60));
+});
+announcePanel.position.set(0,2.6,-3); announcePanel.visible=false; scene.add(announcePanel);
+function showAnnouncement(text){ announceText=String(text||'').slice(0,140); announceUntil=performance.now()+9000; announcePanel.visible=true; announcePanel.userData.redraw(); sfxEvent(); flashScreen('#5dd6ff'); log('📢 '+announceText); }
+
 // ==================================================================
 // ADMIN COMMANDS (received from the Discord bot over MQTT)
 // ==================================================================
@@ -799,6 +815,7 @@ function applyAdmin(msg){
   if(!msg||!msg.cmd) return;
   const sec = +msg.seconds||30;
   switch(msg.cmd){
+    case 'chat': case 'say': { showAnnouncement(msg.text||msg.message||''); break; }
     case 'tokens': { const amt=+msg.amount||0; addTokens(amt); flashScreen('#ffd34d'); sfxCoin(); log(`🎁 Admin granted 🪙${amt}`); save(); refreshUpgrades(); break; }
     case 'luckboost': { const mult=+msg.mult||2; startEvent('🍀 LUCK x'+mult, '#3ddc84', +msg.seconds||60, mult, 1); break; }
     case 'payout': { // server-wide double-or-nothing
@@ -839,6 +856,7 @@ function stepEvents(dt){
   const t=performance.now();
   if(AE.name && AE.until<=t) endEvent();
   if(eventBanner.visible){ eventBanner.userData.redraw(); eventBanner.lookAt(camera.getWorldPosition(new THREE.Vector3())); }
+  if(announcePanel.visible){ announcePanel.lookAt(camera.getWorldPosition(new THREE.Vector3())); if(t>announceUntil){ announcePanel.visible=false; announceText=''; } }
   // rain
   if(AE.rain && Math.random()<0.6) spawnRainCoin();
   for(const c of rainPool){ if(!c.active) continue; c.m.position.y+=c.vy*dt; c.m.rotation.z+=c.spin; if(c.m.position.y<0.1){ c.active=false; c.m.visible=false; } }

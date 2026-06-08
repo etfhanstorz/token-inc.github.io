@@ -61,6 +61,11 @@ client.on('interactionCreate', async (i) => {
         publish({ cmd: 'payout', amount });
         return i.reply(`🎲 Double-or-nothing payout of **🪙${amount}** sent to everyone.`);
       }
+      case 'say': {
+        const text = i.options.getString('message', true);
+        publish({ cmd: 'chat', text });
+        return i.reply(`📢 Announced: "${text}"`);
+      }
       default:
         return i.reply({ content: 'Unknown command.', ephemeral: true });
     }
