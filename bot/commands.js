@@ -103,4 +103,14 @@ export const commands = [
     .setDescription('Post patch/release notes to the notes channel')
     .addStringOption(o => o.setName('title').setDescription('e.g. v1.5 — Outdoor Update').setRequired(true))
     .addStringOption(o => o.setName('notes').setDescription('Use \\n or • for bullet points').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('myid')
+    .setDescription('Show your user ID'),
+
+  new SlashCommandBuilder()
+    .setName('setid')
+    .setDescription('Assign a new user ID to a player (admin only)')
+    .addStringOption(o => o.setName('user').setDescription('Username, device id, or current ID').setRequired(true))
+    .addIntegerOption(o => o.setName('newid').setDescription('New numeric ID').setRequired(true)),
 ].map(c => c.toJSON());

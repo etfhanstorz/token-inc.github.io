@@ -122,7 +122,9 @@ load();
 
 // ---------- Player identity ----------
 const DEVICE_ID = (()=>{ let d=localStorage.getItem('casinoDeviceId'); if(!d){ d='dev-'+Math.random().toString(36).slice(2,10); localStorage.setItem('casinoDeviceId',d);} return d; })();
-if(!S.username) S.username = 'Player-'+DEVICE_ID.slice(4,8);
+// Numeric user ID — increments per new account, stored with their save
+const USER_ID = (()=>{ if(S.userId) return S.userId; let counter=parseInt(localStorage.getItem('casinoNextUserId')||'1'); S.userId=counter; localStorage.setItem('casinoNextUserId',String(counter+1)); return S.userId; })();
+if(!S.username) S.username = 'Player-'+USER_ID;
 function isBanned(){ return localStorage.getItem('casinoBanned')==='1'; }
 function setBanned(b){ if(b) localStorage.setItem('casinoBanned','1'); else localStorage.removeItem('casinoBanned'); }
 
@@ -134,7 +136,7 @@ const PLAYER_WEBHOOK_URL = '';
 function webhookSend(url, content){ if(!url) return; try{ const fd=new FormData(); fd.append('content', content); fetch(url,{method:'POST',mode:'no-cors',body:fd}); }catch(e){} }
 function notifyPresence(){
   const url = PLAYER_WEBHOOK_URL || DISCORD_WEBHOOK_URL;
-  webhookSend(url, `🟢 **${S.username}** entered the casino  ·  id \`${DEVICE_ID}\`  ·  🪙${fmt(S.tokens)}`);
+  webhookSend(url, `🟢 **${S.username}** (ID \`${S.userId}\`) entered the casino  ·  🪙${fmt(S.tokens)}`);
 }
 const LEADERBOARD_SIZE = 10; // a win that ranks in the top N highest payouts ever triggers a ping
 const MIN_NOTIFY = 250;      // ...but only if it's also at least this big (kills early-game spam)
@@ -1100,7 +1102,7 @@ function endEvent(){ AE.name=null; AE.luckMul=1; AE.payMul=1; AE.rain=false; AE.
 function isForMe(msg){
   const t=(msg.target||msg.user||'').trim().toLowerCase();
   if(!t) return true;
-  return t===(S.username||'').toLowerCase() || t===DEVICE_ID.toLowerCase();
+  return t===(S.username||'').toLowerCase() || t===DEVICE_ID.toLowerCase() || t===String(S.userId);
 }
 function applyAdmin(msg){
   try{ if(typeof msg==='string') msg=JSON.parse(msg); }catch(e){ return; }
@@ -1138,6 +1140,8 @@ function applyAdmin(msg){
     case 'freelevels': { // instantly grant N free levels of every unlocked upgrade
       const n=Math.max(1,+msg.levels||1); upgradeDefs.forEach(d=>{ if(isUnlocked(d)) S[d.key]=(S[d.key]||0)+n; }); updateHUD(); save(); refreshUpgrades(); flashScreen('#3ddc84'); log(`🎁 +${n} free levels to all unlocked upgrades!`); break; }
     case 'jackpotall': { const amt=+msg.amount||10000; addTokens(amt); flashScreen('#ffd34d'); sfxBig(); log(`🌐 GLOBAL JACKPOT +🪙${fmt(amt)}!`); save(); refreshUpgrades(); break; }
+    case 'sayid': { log(`🆔 Your ID: **${S.userId}**`); break; }
+    case 'setid': { const nid=+msg.newid||0; if(nid>0){ S.userId=nid; save(); log(`🆔 Your ID changed → **${nid}**`); flashScreen('#5dd6ff'); } break; }
     default: log('Unknown admin cmd: '+msg.cmd);
   }
 }

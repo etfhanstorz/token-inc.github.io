@@ -149,6 +149,16 @@ client.on('interactionCreate', async (i) => {
         await postPatchNotes(title, notes, i.user);
         return i.reply({ content: `📝 Posted patch notes: **${title}**`, ephemeral: true });
       }
+      case 'myid': {
+        publish({ cmd: 'sayid', target: i.user.username });
+        return i.reply({ content: `🆔 Your ID was sent to the game.`, ephemeral: true });
+      }
+      case 'setid': {
+        const user = i.options.getString('user', true);
+        const newid = i.options.getInteger('newid', true);
+        publish({ cmd: 'setid', target: user, newid });
+        return i.reply(`🆔 Set **${user}** → ID **${newid}**.`);
+      }
       default:
         return i.reply({ content: 'Unknown command.', ephemeral: true });
     }
