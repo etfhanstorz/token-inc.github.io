@@ -613,6 +613,16 @@ function handleMsg(data, conn){
   else if(m.t==='roster'){ applyRoster(m.ids); }
 }
 
+// ICE servers: STUN for discovery + free public TURN relays so audio can cross
+// stricter home-network NATs (the default PeerJS broker gives STUN only).
+const PEER_OPTS = { config: { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+] } };
+
 // ---------- Voice chat (WebRTC audio, full mesh) ----------
 // initMic returns a shared promise; calls below AWAIT it so a stream is always
 // attached before we answer/place a call (otherwise the audio is silent).
@@ -633,13 +643,14 @@ function unlockAudio(){ for(const id in MP.audioEls){ MP.audioEls[id].play().cat
 addEventListener('pointerdown', unlockAudio);
 function attachRemoteAudio(id, stream){
   let el=MP.audioEls[id];
-  if(!el){ el=document.createElement('audio'); el.autoplay=true; el.dataset.peer=id; document.body.appendChild(el); MP.audioEls[id]=el; }
-  el.srcObject=stream; el.play().catch(()=>{});
+  if(!el){ el=document.createElement('audio'); el.autoplay=true; el.dataset.peer=id; document.body.appendChild(el); MP.audioEls[id]=el; log('🔊 Hearing a player.'); }
+  el.srcObject=stream; el.play().catch(e=>{ log('🔊 Tap the screen to enable audio.'); });
 }
 async function handleCall(call){
   await initMic();                       // ensure our stream is ready before answering
   call.answer(MP.localStream || undefined);
   call.on('stream', s=>attachRemoteAudio(call.peer, s));
+  call.on('error', e=>{ console.error('call error', e); log('🔇 Voice connect failed.'); });
   call.on('close', ()=>{ if(MP.audioEls[call.peer]){ MP.audioEls[call.peer].remove(); delete MP.audioEls[call.peer]; } });
   MP.calls[call.peer]=call;
 }
@@ -652,6 +663,7 @@ async function maybeCall(otherId){
   const call=MP.peer.call(otherId, MP.localStream || undefined);
   if(!call){ delete MP.calls[otherId]; return; }
   call.on('stream', s=>attachRemoteAudio(otherId, s));
+  call.on('error', e=>{ console.error('call error', e); log('🔇 Voice connect failed.'); });
   call.on('close', ()=>{ if(MP.audioEls[otherId]){ MP.audioEls[otherId].remove(); delete MP.audioEls[otherId]; } });
   MP.calls[otherId]=call;
 }
@@ -678,7 +690,7 @@ function hostRoom(code){
   initMic(); // start mic in background; don't block hosting on the permission dialog
   MP.isHost=true; MP.id='casino-'+code;
   setMpStatus('connecting…');
-  MP.peer=new Peer(MP.id);
+  MP.peer=new Peer(MP.id, PEER_OPTS);
   MP.peer.on('open', id=>{ setMpStatus('hosting "'+code+'" 🎤'); log('🌐 Hosting room "'+code+'" (id '+id+'). Share the code.'); });
   MP.peer.on('call', handleCall);
   MP.peer.on('connection', conn=>{
@@ -694,7 +706,7 @@ function joinRoom(code){
   if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); setMpStatus('lib error'); return; }
   if(MP.peer){ try{ MP.peer.destroy(); }catch(e){} MP.peer=null; }
   initMic();
-  MP.isHost=false; setMpStatus('connecting…'); MP.peer=new Peer();
+  MP.isHost=false; setMpStatus('connecting…'); MP.peer=new Peer(PEER_OPTS);
   MP.peer.on('call', handleCall);
   MP.peer.on('open', ()=>{
     const conn=MP.peer.connect('casino-'+code, {reliable:false});
