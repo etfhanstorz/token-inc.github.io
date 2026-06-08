@@ -195,18 +195,38 @@ camera.position.set(0,1.6,0);
 scene.add(rig);
 rig.position.set(0,0,4);
 
-// Lights
-scene.add(new THREE.HemisphereLight(0x8899ff, 0x221133, 0.7));
-const key = new THREE.DirectionalLight(0xffffff, 0.8);
-key.position.set(5,10,5); key.castShadow=true; scene.add(key);
-function neon(x,y,z,c){ const l=new THREE.PointLight(c,1.4,18); l.position.set(x,y,z); scene.add(l); return l; }
-neon(-6,4,-6,0xff5db1); neon(6,4,-6,0x5dd6ff); neon(0,5,-10,0xffd34d); neon(0,4,6,0x9b5dff);
+// Outdoor daylight lighting
+scene.add(new THREE.HemisphereLight(0xbcd6ff, 0x5a6a3a, 1.0));
+const key = new THREE.DirectionalLight(0xfff3d6, 1.1);
+key.position.set(12,18,8); key.castShadow=true;
+key.shadow.mapSize.set(1024,1024); key.shadow.camera.near=1; key.shadow.camera.far=60;
+key.shadow.camera.left=-25; key.shadow.camera.right=25; key.shadow.camera.top=25; key.shadow.camera.bottom=-25;
+scene.add(key);
+const ambient = new THREE.AmbientLight(0xffffff, 0.25); scene.add(ambient);
 
-// Floor
-const floorGeo = new THREE.PlaneGeometry(60,60);
-const floorMat = new THREE.MeshStandardMaterial({ color:0x0a0c1a, metalness:0.6, roughness:0.4 });
-const floor = new THREE.Mesh(floorGeo, floorMat); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
-const grid = new THREE.GridHelper(60,60,0x2a2f55,0x161a30); grid.position.y=0.01; scene.add(grid);
+// Sky dome (gradient) + horizon fog
+const skyCanvas=document.createElement('canvas'); skyCanvas.width=16; skyCanvas.height=256;
+{ const x=skyCanvas.getContext('2d'); const g=x.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,'#4d86d6'); g.addColorStop(0.55,'#9cc2ec'); g.addColorStop(1,'#dce9f6'); x.fillStyle=g; x.fillRect(0,0,16,256); }
+const skyTex=new THREE.CanvasTexture(skyCanvas);
+const skyDome=new THREE.Mesh(new THREE.SphereGeometry(120,32,16), new THREE.MeshBasicMaterial({map:skyTex, side:THREE.BackSide, fog:false}));
+scene.add(skyDome);
+scene.background=new THREE.Color(0xbcd6ee);
+scene.fog=new THREE.Fog(0xcfe0f0, 30, 110);
+// soft sun disc
+const sunMesh=new THREE.Mesh(new THREE.CircleGeometry(5,24), new THREE.MeshBasicMaterial({color:0xfff6e0, fog:false}));
+sunMesh.position.set(34,30,-60); sunMesh.lookAt(0,2,0); scene.add(sunMesh);
+
+// Grass ground — flat clearing for the casino, rolling hills beyond
+const texLoader = new THREE.TextureLoader();
+const grassTex = texLoader.load('textures/grass.jpg');
+grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping; grassTex.repeat.set(44,44); grassTex.anisotropy = 8;
+function terrainH(x,z){ const r=Math.hypot(x,z); const amp=Math.min(1,Math.max(0,(r-16)/16))*2.6;
+  return (Math.sin(x*0.16)*Math.cos(z*0.13)+Math.sin(x*0.07+z*0.10)*0.8+Math.sin(z*0.21)*0.5)*amp; }
+const groundGeo = new THREE.PlaneGeometry(190,190,170,170);
+{ const pos=groundGeo.attributes.position; for(let i=0;i<pos.count;i++){ pos.setZ(i, terrainH(pos.getX(i), pos.getY(i))); } groundGeo.computeVertexNormals(); }
+const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map:grassTex, roughness:1, metalness:0 }));
+ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
 
 // ---------- Interactables ----------
 const interactables = []; // {mesh, onTap, hover()}
@@ -333,7 +353,7 @@ const scratchLuck= () => 1 + (S.scratchLv||0)*0.25;
 // ==================================================================
 // BET SIZING — raise/lower a global bet multiplier (cost & payout scale)
 // ==================================================================
-const BET_OPTIONS=[1,2,5,10,25,50,100,250,1000];
+const BET_OPTIONS=[1,2,5,10,25,50,100,250,1000,5000,10000,25000,50000,100000,125000,150000,175000,250000,500000,1000000,1250000,1500000];
 if(!S.betMul || BET_OPTIONS.indexOf(S.betMul)<0) S.betMul=1;
 function bet(){ return S.betMul||1; }
 const betLabels=[]; // machine cost labels that redraw when bet changes
@@ -343,7 +363,7 @@ function cycleBet(dir){
   let i=BET_OPTIONS.indexOf(S.betMul); i=(i+dir+BET_OPTIONS.length)%BET_OPTIONS.length;
   S.betMul=BET_OPTIONS[i]; save(); refreshBet(); sfxClick();
 }
-const betConsole=new THREE.Group(); betConsole.position.set(0,0.95,1.6); scene.add(betConsole);
+const betConsole=new THREE.Group(); betConsole.position.set(0,0.72,2.7); betConsole.scale.setScalar(0.8); scene.add(betConsole);
 const betLabelTop=makePanel(1.6,0.3,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 60px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('💵 BET SIZE', w/2,h/2); });
 betLabelTop.position.set(0,0.42,0); betConsole.add(betLabelTop);
 const betDisplay=makePanel(1.5,0.55,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='rgba(8,4,24,0.88)'; roundRect(c,4,4,w-8,h-8,16); c.fill(); c.lineWidth=6; c.strokeStyle='#ffd34d'; c.stroke(); c.fillStyle='#ffe347'; c.font='bold 74px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('x'+fmt(bet()), w/2,h/2); });
@@ -851,33 +871,29 @@ function sfxEvent(){ [392,523,659,784,1047].forEach((f,i)=>tone(f,0.25,'square',
 // DECORATION & ATMOSPHERE
 // ==================================================================
 function buildDecor(){
-  // ceiling
-  const ceil=new THREE.Mesh(new THREE.PlaneGeometry(60,60), new THREE.MeshStandardMaterial({color:0x0a0b18, metalness:0.4, roughness:0.8, side:THREE.DoubleSide}));
-  ceil.rotation.x=Math.PI/2; ceil.position.y=8; scene.add(ceil);
-  // carpet accent
-  const carpet=new THREE.Mesh(new THREE.CircleGeometry(9,48), new THREE.MeshStandardMaterial({color:0x2a0d3a, metalness:0.2, roughness:0.9}));
-  carpet.rotation.x=-Math.PI/2; carpet.position.y=0.02; scene.add(carpet);
-  // neon columns
-  const colMat=new THREE.MeshStandardMaterial({color:0x12152e, metalness:0.6, roughness:0.3});
-  const ringColors=[0xff5db1,0x5dd6ff,0xffd34d,0x9b5dff];
-  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, R=11; const x=Math.cos(a)*R, z=Math.sin(a)*R;
-    const col=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,8,12), colMat); col.position.set(x,4,z); scene.add(col);
-    for(let r=0;r<4;r++){ const ring=new THREE.Mesh(new THREE.TorusGeometry(0.42,0.05,8,20), new THREE.MeshBasicMaterial({color:ringColors[(i+r)%4]})); ring.position.set(x,1.5+r*1.7,z); ring.rotation.x=Math.PI/2; scene.add(ring); }
+  // smaller wooden patio under the central area (machines mostly sit on grass)
+  const deck=new THREE.Mesh(new THREE.CircleGeometry(7.5,56), new THREE.MeshStandardMaterial({color:0x8a6a44, roughness:0.85, metalness:0}));
+  deck.rotation.x=-Math.PI/2; deck.position.y=0.02; deck.receiveShadow=true; scene.add(deck);
+  const deckRim=new THREE.Mesh(new THREE.TorusGeometry(7.5,0.12,8,64), new THREE.MeshStandardMaterial({color:0x5a4430, roughness:0.9}));
+  deckRim.rotation.x=Math.PI/2; deckRim.position.y=0.06; scene.add(deckRim);
+  // wooden lamp posts around the patio with warm lights
+  const postMat=new THREE.MeshStandardMaterial({color:0x4a3826, roughness:0.85});
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, R=10.6; const x=Math.cos(a)*R, z=Math.sin(a)*R;
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.14,4.2,8), postMat); post.position.set(x,2.1,z); post.castShadow=true; scene.add(post);
+    const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.22,12,12), new THREE.MeshStandardMaterial({color:0xfff1c0, emissive:0xffd98a, emissiveIntensity:0.9}));
+    lamp.position.set(x,4.2,z); scene.add(lamp);
+    const pl=new THREE.PointLight(0xffe2a0, 0.5, 9); pl.position.set(x,4.2,z); scene.add(pl);
   }
-  // big CASINO sign
-  const sign=makePanel(6,1.2,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='rgba(10,8,24,0.6)'; roundRect(c,0,0,w,h,30); c.fill();
-    const g=c.createLinearGradient(0,0,w,0); g.addColorStop(0,'#ffd34d'); g.addColorStop(0.5,'#ff5db1'); g.addColorStop(1,'#5dd6ff');
-    c.fillStyle=g; c.font='bold 150px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('★ CASINO ★', w/2, h/2); });
-  sign.position.set(0,6.2,-11.4); scene.add(sign);
-  // floating sparkle dots
-  const sparkGeo=new THREE.BufferGeometry(); const N=260, pos=new Float32Array(N*3);
-  for(let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*40; pos[i*3+1]=Math.random()*7+0.5; pos[i*3+2]=(Math.random()-0.5)*40; }
-  sparkGeo.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  const sparks=new THREE.Points(sparkGeo, new THREE.PointsMaterial({color:0xffe08a, size:0.05, transparent:true, opacity:0.7}));
-  scene.add(sparks); decorState.sparks=sparks;
-  // planters / decor cubes near machines
-  const decoMat=new THREE.MeshStandardMaterial({color:0x1a2440, metalness:0.5, roughness:0.4});
-  [[-2.2,-7.6],[2.2,-7.6],[-9,-3],[9,-1]].forEach(([x,z])=>{ const box=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.5,0.5),decoMat); box.position.set(x,0.25,z); scene.add(box); });
+  // big CASINO sign over the entrance (warm marquee, no neon party gradient)
+  const sign=makePanel(6,1.2,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='rgba(20,12,6,0.85)'; roundRect(c,0,0,w,h,24); c.fill();
+    c.lineWidth=8; c.strokeStyle='#ffcf6a'; c.stroke();
+    c.fillStyle='#ffcf6a'; c.font='bold 150px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('★ CASINO ★', w/2, h/2); });
+  sign.position.set(0,5.4,-11.4); scene.add(sign);
+  // a few distant bushes/trees on the hills for life
+  for(let i=0;i<22;i++){ const a=Math.random()*Math.PI*2, R=22+Math.random()*40; const x=Math.cos(a)*R, z=Math.sin(a)*R; const gy=terrainH(x,z);
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.24,1.4,6), new THREE.MeshStandardMaterial({color:0x5a3d22})); trunk.position.set(x,gy+0.7,z); scene.add(trunk);
+    const crown=new THREE.Mesh(new THREE.IcosahedronGeometry(1.0+Math.random()*0.6,0), new THREE.MeshStandardMaterial({color:0x2f6b2a, flatShading:true})); crown.position.set(x,gy+1.9,z); scene.add(crown);
+  }
 }
 const decorState={ sparks:null };
 buildDecor();
