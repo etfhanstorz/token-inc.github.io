@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Token Casino VR</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a1140">
+<link rel="icon" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { height:100%; overflow:hidden; background:#05060a; font-family:'Segoe UI',system-ui,sans-serif; color:#fff; }
@@ -1111,6 +1118,9 @@ document.getElementById('joinBtn').addEventListener('click', ()=>{
   const code=(roomInput.value||'').trim().toLowerCase().replace(/[^a-z0-9-]/g,'');
   if(!code){ setMpStatus('enter a code first'); return; } joinRoom(code);
 });
+
+// register service worker so the game is installable as a PWA / packageable as an APK
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 
 log('Welcome! Earn tokens, buy upgrades, gamble it all.');
 refreshUpgrades();
