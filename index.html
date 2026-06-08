@@ -212,7 +212,7 @@ const upgradeDefs = [
 function upCost(def){ const lv=S[def.key]||0; return Math.floor(def.base*Math.pow(def.grow, def.key==='autoLv'||def.key==='critLv'?lv:(lv-1))); }
 
 const wall = new THREE.Group();
-wall.position.set(-7.5, 0, -6); wall.rotation.y = Math.PI/2; scene.add(wall);
+wall.position.set(0, 0, 8); wall.rotation.y = Math.PI; scene.add(wall); // behind the spawn point
 // wall backboard
 const bb = new THREE.Mesh(new THREE.PlaneGeometry(7.5,4.2), new THREE.MeshStandardMaterial({color:0x0c0e1f, metalness:0.5, roughness:0.5}));
 bb.position.set(0,2.2,-0.05); wall.add(bb);
