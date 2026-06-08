@@ -9,7 +9,26 @@ const {
   ADMIN_CHANNEL = 'token-casino-abcd1234',
   MQTT_URL = 'wss://broker.emqx.io:8084/mqtt',
   ADMINS = '',
+  PATCHNOTES_WEBHOOK_URL = '',
 } = process.env;
+
+// Post a formatted patch-notes embed to a Discord webhook
+async function postPatchNotes(title, notes, author) {
+  if (!PATCHNOTES_WEBHOOK_URL) { console.warn('No PATCHNOTES_WEBHOOK_URL set'); return; }
+  const embed = {
+    title: `📝 ${title}`,
+    description: notes.slice(0, 4000),
+    color: 0x5dd6ff,
+    footer: { text: `Token Casino VR • released by ${author?.username || 'admin'}` },
+    timestamp: new Date().toISOString(),
+  };
+  try {
+    await fetch(PATCHNOTES_WEBHOOK_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'Token Casino Patch Notes', embeds: [embed] }),
+    });
+  } catch (e) { console.error('patchnotes webhook failed', e); }
+}
 
 if (!DISCORD_TOKEN) { console.error('Missing DISCORD_TOKEN in .env'); process.exit(1); }
 
@@ -100,6 +119,35 @@ client.on('interactionCreate', async (i) => {
         const name = i.options.getString('name', true);
         publish({ cmd: 'rename', target: user, name });
         return i.reply(`✏️ Renamed **${user}** → **${name}**.`);
+      }
+      case 'admin': {
+        const user = i.options.getString('user', true);
+        const on = i.options.getBoolean('on');
+        publish({ cmd: 'admin', target: user, ...(on === null ? {} : { on }) });
+        return i.reply(`⚡ Admin ${on === false ? 'removed from' : 'granted to'} **${user}**.`);
+      }
+      case 'freebuy': {
+        const user = i.options.getString('user', true);
+        const on = i.options.getBoolean('on');
+        publish({ cmd: 'freebuy', target: user, ...(on === null ? {} : { on }) });
+        return i.reply(`🆓 Free upgrades ${on === false ? 'off for' : 'on for'} **${user}**.`);
+      }
+      case 'freelevels': {
+        const levels = i.options.getInteger('levels', true);
+        const user = i.options.getString('user') ?? undefined;
+        publish({ cmd: 'freelevels', levels, target: user });
+        return i.reply(`🎁 +${levels} free upgrade levels for ${user ? `**${user}**` : 'everyone'}.`);
+      }
+      case 'jackpotall': {
+        const amount = i.options.getInteger('amount', true);
+        publish({ cmd: 'jackpotall', amount });
+        return i.reply(`🌐 Global jackpot of **🪙${amount}** sent to everyone!`);
+      }
+      case 'patchnotes': {
+        const title = i.options.getString('title', true);
+        const notes = i.options.getString('notes', true).replace(/\\n/g, '\n').replace(/•/g, '\n• ');
+        await postPatchNotes(title, notes, i.user);
+        return i.reply({ content: `📝 Posted patch notes: **${title}**`, ephemeral: true });
       }
       default:
         return i.reply({ content: 'Unknown command.', ephemeral: true });

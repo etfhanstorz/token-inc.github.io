@@ -41,6 +41,15 @@
     border:1px solid #2a2f55; background:rgba(10,12,24,.7); color:#fff; font-size:20px; cursor:pointer; }
   #domMute.muted { background:rgba(80,16,28,.85); border-color:#ff3b5b; }
   #VRButton { display:none !important; }
+  #adminPanel { position:fixed; top:60px; right:10px; z-index:7; display:none; width:190px;
+    background:rgba(10,12,24,.92); border:1px solid #3a2f6a; border-radius:12px; padding:10px; }
+  #adminPanel .ah { color:#ffd34d; font-weight:800; font-size:13px; text-align:center; margin-bottom:8px; letter-spacing:1px; }
+  #adminPanel button { display:block; width:100%; margin:5px 0; padding:8px; border:none; border-radius:8px; cursor:pointer;
+    font-weight:700; font-size:13px; background:#1b2140; color:#cfe0ff; }
+  #adminPanel button:active { transform:scale(.98); }
+  #adminPanel button.on { background:#3ddc84; color:#06210f; }
+  #adminPanel .row { display:flex; gap:5px; }
+  #adminPanel .row button { margin:5px 0; }
 </style>
 </head>
 <body>
@@ -48,6 +57,16 @@
 <div id="log"></div>
 <div id="crosshair"></div>
 <button id="domMute" title="Toggle mic (M)">🎤</button>
+<div id="adminPanel">
+  <div class="ah">⚡ ADMIN PANEL</div>
+  <button id="ahFree">🆓 Free Mode</button>
+  <div class="row"><button data-give="10000">+10K</button><button data-give="1000000">+1M</button><button data-give="1000000000">+1B</button></div>
+  <button data-ev="rain">🌧️ Token Rain (all)</button>
+  <button data-ev="golden">🌟 Golden Hour (all)</button>
+  <button data-ev="jackpot">💎 50x (all)</button>
+  <button data-ev="disco">🪩 Disco (all)</button>
+  <button id="ahHammer">🔨 Ban Hammer</button>
+</div>
 <div id="joyBase"><div id="joyKnob"></div></div>
 <div id="overlay">
   <h1>TOKEN CASINO VR</h1>
@@ -168,8 +187,12 @@ const logEl = document.getElementById('log');
 let logLines = [];
 function log(msg){ logLines.push(msg); if(logLines.length>4) logLines.shift(); logEl.innerHTML = logLines.join('<br>'); }
 // compact number formatting: 1500 -> "1.5K", 2_300_000 -> "2.3M", etc.
-const NUM_SUFFIX=['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','De','Ud','Dd'];
-function fmt(n){ n=Math.floor(n); if(Math.abs(n)<1000) return n.toString(); let i=0,v=n; while(Math.abs(v)>=1000 && i<NUM_SUFFIX.length-1){ v/=1000; i++; } let s=(Math.abs(v)>=100?v.toFixed(0):v.toFixed(2)); s=s.replace(/\.?0+$/,''); return s+NUM_SUFFIX[i]; }
+const NUM_SUFFIX=['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','Dc','UDc','DDc','TDc','QaDc','QiDc','SxDc','SpDc','OcDc','NoDc','Vg','UVg','DVg','TVg','QaVg','QiVg','SxVg','SpVg','OcVg','NoVg','Tg','UTg','DTg','TTg'];
+function fmt(n){ n=Math.floor(n); if(!isFinite(n)) return '∞'; const neg=n<0; n=Math.abs(n); if(n<1000) return (neg?'-':'')+n;
+  let i=Math.floor(Math.log10(n)/3);
+  if(i>=NUM_SUFFIX.length) return (neg?'-':'')+n.toExponential(2).replace('e+','e');
+  let v=n/Math.pow(1000,i); let s=(v>=100?v.toFixed(0):v.toFixed(2)).replace(/\.?0+$/,'');
+  return (neg?'-':'')+s+NUM_SUFFIX[i]; }
 function updateHUD(){ tokEl.textContent = fmt(S.tokens); luckEl.textContent=S.luckLv; payEl.textContent=payMul().toFixed(1); }
 function addTokens(n){ S.tokens += n; updateHUD(); }
 updateHUD();
@@ -334,7 +357,7 @@ function drawUpgrade(def){
 }
 function buyUpgrade(def, block){
   if(!isUnlocked(def)){ const rq=upgradeByKey[def.req.key]; log(`🔒 ${def.name} locked — need ${rq.name} Lv${def.req.lv}`); pulse(block,0xff3b5b); sfxLose(); return; }
-  const cost=upCost(def);
+  const cost=freeBuy?0:upCost(def);
   if(S.tokens>=cost){
     S.tokens-=cost; S[def.key]=(S[def.key]||0)+1; updateHUD(); save();
     log(`Bought ${def.name} → Lv ${S[def.key]}`);
@@ -656,7 +679,8 @@ function intersectFrom(originObj){
   return raycaster.intersectObjects(interactables,false);
 }
 function onSelect(originObj){
-  const hits=intersectFrom(originObj);
+  const hits=intersectFrom(originObj);            // sets raycaster.ray
+  if(hammerActive && banUnderRay()) return;
   if(hits.length){ const h=hits[0]; const m=h.object; if(m.userData.onTap){ sfxClick(); m.userData.onTap(h); pulse(m,0x5dd6ff); } }
 }
 
@@ -689,10 +713,21 @@ function makeAvatar(id){
   const visor=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.07,0.02), new THREE.MeshStandardMaterial({color:0x05060a}));
   visor.position.set(0,0.02,0.13); head.add(visor);
   const hands=[0,1].map(()=>{ const h=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.12), mat); g.add(h); return h; });
+  // nametag above head
+  const tagCanvas=document.createElement('canvas'); tagCanvas.width=256; tagCanvas.height=64;
+  const tagTex=new THREE.CanvasTexture(tagCanvas);
+  const tag=new THREE.Mesh(new THREE.PlaneGeometry(0.5,0.125), new THREE.MeshBasicMaterial({map:tagTex,transparent:true}));
+  tag.position.set(0,0.3,0); head.add(tag);
+  g.userData.avatarId=id; head.userData.avatarId=id;
   avatarRoot.add(g);
-  const a={ group:g, head, hands, t:{ head:{p:new THREE.Vector3(),q:new THREE.Quaternion()}, hands:[{p:new THREE.Vector3(),q:new THREE.Quaternion()},{p:new THREE.Vector3(),q:new THREE.Quaternion()}] } };
+  const a={ group:g, head, hands, tag, tagCanvas, tagTex, username:'',
+    t:{ head:{p:new THREE.Vector3(),q:new THREE.Quaternion()}, hands:[{p:new THREE.Vector3(),q:new THREE.Quaternion()},{p:new THREE.Vector3(),q:new THREE.Quaternion()}] } };
   MP.avatars[id]=a; return a;
 }
+function drawTag(a){ const x=a.tagCanvas.getContext('2d'); x.clearRect(0,0,256,64);
+  x.fillStyle='rgba(8,10,20,0.7)'; x.fillRect(0,12,256,40);
+  x.fillStyle='#fff'; x.font='bold 30px Segoe UI'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillText((a.username||'player').slice(0,16),128,33); a.tagTex.needsUpdate=true; }
 function removeAvatar(id){ const a=MP.avatars[id]; if(a){ avatarRoot.remove(a.group); delete MP.avatars[id]; } }
 
 function setMpStatus(t){ const el=document.getElementById('mpStatus'); if(el) el.textContent=t; }
@@ -702,11 +737,12 @@ function localState(){
   const hp=new THREE.Vector3(), hq=new THREE.Quaternion(), s=new THREE.Vector3();
   camera.matrixWorld.decompose(hp,hq,s);
   const hands=controllers.map(c=>{ const p=new THREE.Vector3(),q=new THREE.Quaternion(); c.matrixWorld.decompose(p,q,s); return {p:[p.x,p.y,p.z],q:[q.x,q.y,q.z,q.w]}; });
-  return { id:MP.myId, head:{p:[hp.x,hp.y,hp.z],q:[hq.x,hq.y,hq.z,hq.w]}, hands };
+  return { id:MP.myId, name:S.username, head:{p:[hp.x,hp.y,hp.z],q:[hq.x,hq.y,hq.z,hq.w]}, hands };
 }
 function applyState(st){
   if(st.id===MP.myId) return;
   const a=MP.avatars[st.id]||makeAvatar(st.id);
+  if(st.name && st.name!==a.username){ a.username=st.name; drawTag(a); }
   a.t.head.p.fromArray(st.head.p); a.t.head.q.fromArray(st.head.q);
   (st.hands||[]).forEach((h,i)=>{ if(a.t.hands[i]){ a.t.hands[i].p.fromArray(h.p); a.t.hands[i].q.fromArray(h.q); } });
   a.lastSeen=performance.now();
@@ -843,6 +879,7 @@ function mpUpdate(dt){
     if(a.lastSeen && now-a.lastSeen>5000){ removeAvatar(id); continue; }
     a.head.position.lerp(a.t.head.p, 0.3); a.head.quaternion.slerp(a.t.head.q, 0.3);
     a.hands.forEach((h,i)=>{ h.position.lerp(a.t.hands[i].p,0.3); h.quaternion.slerp(a.t.hands[i].q,0.3); });
+    if(a.tag){ a.tag.lookAt(camera.getWorldPosition(new THREE.Vector3())); }
   }
 }
 
@@ -967,6 +1004,7 @@ function flashScreen(color){ // brief fullscreen tint via DOM
   document.body.appendChild(d); requestAnimationFrame(()=>d.style.opacity='0'); setTimeout(()=>d.remove(),700);
 }
 function disconnectVoiceAndPeers(){ try{ if(MP.peer) MP.peer.destroy(); }catch(e){} MP.peer=null; MP.conns=[]; MP.hostConn=null; }
+function exitVR(){ try{ const s=renderer.xr.getSession(); if(s) s.end(); }catch(e){} }
 function showBlock(title, message, permanent){
   disconnectVoiceAndPeers();                 // remove from multiplayer/voice (keep MQTT so /unban can reach)
   let el=document.getElementById('blockScreen');
@@ -994,8 +1032,9 @@ function applyAdmin(msg){
   if(!isForMe(msg)) return;            // targeted command for someone else
   const sec = +msg.seconds||30;
   switch(msg.cmd){
-    case 'kick': { showBlock('👢 KICKED', 'An admin kicked you from the casino.', false); break; }
-    case 'ban':  { setBanned(true); showBlock('⛔ BANNED', 'An admin banned you from the casino.', true); break; }
+    case 'kick': { exitVR(); showBlock('👢 KICKED', 'An admin kicked you from the casino.', false); break; }
+    case 'ban':  { setBanned(true); localStorage.removeItem('tokenCasino'); // wipe their progress
+      Object.assign(S,{tokens:0}); exitVR(); showBlock('⛔ BANNED', 'An admin banned you. Your progress has been wiped.', true); break; }
     case 'unban':{ setBanned(false); log('✅ You were unbanned. Reload to play.'); break; }
     case 'mute': { VOICE.forced=true; if(!VOICE.muted) toggleMute(); else { const dm=document.getElementById('domMute'); if(dm){dm.textContent='🔇';dm.classList.add('muted');} } log('🔇 An admin muted your mic.'); break; }
     case 'unmute':{ VOICE.forced=false; log('🎤 An admin unmuted you.'); break; }
@@ -1018,6 +1057,11 @@ function applyAdmin(msg){
       else if(name==='disco') startEvent('🪩 DISCO PARTY', '#9b5dff', sec, 1.5, 1.5, {disco:true});
       else { log('Unknown event: '+name); return; }
       break; }
+    case 'admin': { setAdmin(msg.on===undefined? !adminMode : !!msg.on); log(adminMode?'⚡ You are now an ADMIN.':'Admin removed.'); break; }
+    case 'freebuy': { freeBuy = msg.on===undefined? !freeBuy : !!msg.on; log(freeBuy?'🆓 Free upgrades enabled!':'Free upgrades off.'); refreshUpgrades(); break; }
+    case 'freelevels': { // instantly grant N free levels of every unlocked upgrade
+      const n=Math.max(1,+msg.levels||1); upgradeDefs.forEach(d=>{ if(isUnlocked(d)) S[d.key]=(S[d.key]||0)+n; }); updateHUD(); save(); refreshUpgrades(); flashScreen('#3ddc84'); log(`🎁 +${n} free levels to all unlocked upgrades!`); break; }
+    case 'jackpotall': { const amt=+msg.amount||10000; addTokens(amt); flashScreen('#ffd34d'); sfxBig(); log(`🌐 GLOBAL JACKPOT +🪙${fmt(amt)}!`); save(); refreshUpgrades(); break; }
     default: log('Unknown admin cmd: '+msg.cmd);
   }
 }
@@ -1035,6 +1079,27 @@ function connectAdminBridge(){
   }catch(e){ console.error('MQTT connect failed', e); }
 }
 connectAdminBridge();
+function publishAdmin(obj){ try{ if(mqttClient && mqttClient.connected) mqttClient.publish('tokencasino/'+ADMIN_CHANNEL+'/cmd', JSON.stringify(obj)); }catch(e){} }
+
+// ---------- Admin mode + in-game admin panel + ban hammer ----------
+let adminMode = localStorage.getItem('casinoAdmin')==='1';
+let freeBuy = false;
+let hammerActive = false;
+function setAdmin(on){ adminMode=on; if(on) localStorage.setItem('casinoAdmin','1'); else { localStorage.removeItem('casinoAdmin'); hammerActive=false; }
+  const ap=document.getElementById('adminPanel'); if(ap) ap.style.display = (on && overlay.style.display==='none')?'block':'none'; updateHammerBtn(); }
+function updateHammerBtn(){ const b=document.getElementById('ahHammer'); if(b){ b.textContent = hammerActive?'🔨 BAN HAMMER: ON':'🔨 Ban Hammer'; b.classList.toggle('on',hammerActive); } }
+// try to ban whatever avatar the current ray hits; returns true if it consumed the action
+function banUnderRay(){
+  if(!hammerActive) return false;
+  const hits=raycaster.intersectObjects(avatarRoot.children,true);
+  if(!hits.length) return false;
+  let o=hits[0].object; while(o && !o.userData.avatarId) o=o.parent;
+  if(!o) return false;
+  const a=MP.avatars[o.userData.avatarId]; const target=a&&a.username;
+  if(target){ publishAdmin({cmd:'ban', target}); log('🔨 Banned '+target); flashScreen('#ff2e97'); sfxBig(); }
+  else log('🔨 That player has no name yet.');
+  return true;
+}
 
 // Per-frame updates for events
 function stepEvents(dt){
@@ -1089,6 +1154,7 @@ renderer.domElement.addEventListener('click', ()=>{
   if(!pointerLocked){ renderer.domElement.requestPointerLock(); return; }
   // raycast from camera center
   raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+  if(hammerActive && banUnderRay()) return;
   const hits=raycaster.intersectObjects(interactables,false);
   if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ sfxClick(); h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
 });
@@ -1153,8 +1219,10 @@ function onTouchEnd(e){
       // a short tap that didn't drag = interact at the crosshair
       if(lookMoved<12 && performance.now()-lookStartT<300){
         raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-        const hits=raycaster.intersectObjects(interactables,false);
-        if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ sfxClick(); h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
+        if(!(hammerActive && banUnderRay())){
+          const hits=raycaster.intersectObjects(interactables,false);
+          if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ sfxClick(); h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
+        }
       }
       lookTouchId=null;
     }
@@ -1199,6 +1267,11 @@ const vrBtn=VRButton.createButton(renderer); vrBtn.style.display='none'; documen
 const crosshairEl=document.getElementById('crosshair');
 const domMute=document.getElementById('domMute');
 domMute.addEventListener('click', ()=>{ audio(); toggleMute(); });
+// admin panel wiring
+document.getElementById('ahFree').addEventListener('click', (e)=>{ freeBuy=!freeBuy; e.target.classList.toggle('on',freeBuy); e.target.textContent=freeBuy?'🆓 Free Mode: ON':'🆓 Free Mode'; log(freeBuy?'🆓 Everything is FREE':'Free mode off'); refreshUpgrades(); });
+document.getElementById('ahHammer').addEventListener('click', ()=>{ hammerActive=!hammerActive; updateHammerBtn(); log(hammerActive?'🔨 Ban hammer ON — tap a player to ban':'Ban hammer off'); });
+document.querySelectorAll('#adminPanel [data-give]').forEach(b=>b.addEventListener('click', ()=>{ addTokens(+b.dataset.give); flashScreen('#ffd34d'); sfxCoin(); save(); refreshUpgrades(); }));
+document.querySelectorAll('#adminPanel [data-ev]').forEach(b=>b.addEventListener('click', ()=>{ publishAdmin({cmd:'event', name:b.dataset.ev, seconds:30}); log('✨ Triggered '+b.dataset.ev+' for everyone'); }));
 renderer.xr.addEventListener('sessionstart', ()=>{ crosshairEl.style.display='none'; statsPanel.visible=true; muteBtn.visible=true; domMute.style.display='none'; });
 renderer.xr.addEventListener('sessionend', ()=>{ crosshairEl.style.display='block'; statsPanel.visible=false; muteBtn.visible=false; });
 // username field
@@ -1209,6 +1282,7 @@ enterBtn.addEventListener('click', ()=>{
   overlay.style.display='none';
   crosshairEl.style.display='block';
   domMute.style.display='block';
+  if(adminMode){ document.getElementById('adminPanel').style.display='block'; updateHammerBtn(); }
   notifyPresence();
   if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }); }
   else log('Desktop mode. Click to look/interact, WASD to move.');

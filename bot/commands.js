@@ -74,4 +74,33 @@ export const commands = [
     .setDescription('Change a player\'s username')
     .addStringOption(o => o.setName('user').setDescription('Current username or device id').setRequired(true))
     .addStringOption(o => o.setName('name').setDescription('New username').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('admin')
+    .setDescription('Grant a player the in-game admin panel')
+    .addStringOption(o => o.setName('user').setDescription('Username or device id').setRequired(true))
+    .addBooleanOption(o => o.setName('on').setDescription('On/off (default toggles)').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('freebuy')
+    .setDescription('Make all upgrades free for a player')
+    .addStringOption(o => o.setName('user').setDescription('Username or device id').setRequired(true))
+    .addBooleanOption(o => o.setName('on').setDescription('On/off (default toggles)').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('freelevels')
+    .setDescription('Instantly grant free upgrade levels (everyone, or one user)')
+    .addIntegerOption(o => o.setName('levels').setDescription('How many levels of each upgrade').setRequired(true))
+    .addStringOption(o => o.setName('user').setDescription('Username or device id (blank = everyone)').setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName('jackpotall')
+    .setDescription('Global jackpot: give every player tokens')
+    .addIntegerOption(o => o.setName('amount').setDescription('Tokens for everyone').setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName('patchnotes')
+    .setDescription('Post patch/release notes to the notes channel')
+    .addStringOption(o => o.setName('title').setDescription('e.g. v1.5 — Outdoor Update').setRequired(true))
+    .addStringOption(o => o.setName('notes').setDescription('Use \\n or • for bullet points').setRequired(true)),
 ].map(c => c.toJSON());
