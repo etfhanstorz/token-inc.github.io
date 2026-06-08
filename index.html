@@ -80,6 +80,7 @@ load();
 // Paste your Discord webhook URL between the quotes to enable high-payout pings.
 const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1513324557220708513/W9UayWH6rKptEtgwk6TDllmwNG0B9b1YnBWUDid0QQ6GEYRIolE2R85B3z-yg28WMOnE';
 const LEADERBOARD_SIZE = 10; // a win that ranks in the top N highest payouts ever triggers a ping
+const MIN_NOTIFY = 250;      // ...but only if it's also at least this big (kills early-game spam)
 function notifyDiscord(amount, game, rank){
   if(!DISCORD_WEBHOOK_URL) return;
   try {
@@ -100,8 +101,11 @@ function reportWin(amount, game){
   if(board.length>LEADERBOARD_SIZE) board.length=LEADERBOARD_SIZE;
   const rank = board.indexOf(amount)+1;
   save();
-  notifyDiscord(amount, game, rank);
-  if(typeof mpBroadcastWin==='function') mpBroadcastWin(amount, game);
+  // only ping/broadcast for genuinely big hits — kills early-game spam
+  if(amount >= MIN_NOTIFY){
+    notifyDiscord(amount, game, rank);
+    if(typeof mpBroadcastWin==='function') mpBroadcastWin(amount, game);
+  }
 }
 
 const VOICE = { muted:false };   // hoist-safe mute state (used by the mute button drawn before MP exists)
@@ -387,10 +391,11 @@ registerInteractable(scratchPanel, (hit)=>scratchAt(hit));
 function newTicket(){
   if(S.tokens<25){ log('Need 🪙25 for a ticket'); return; }
   addTokens(-25); save();
-  const prizes=[0,0,0,5,10,10,25,50,100,250];
-  const cells=[]; for(let i=0;i<9;i++){ let p=prizes[(Math.random()*prizes.length)|0]; if(Math.random()<critChance()) p*=2; cells.push(Math.floor(p*payMul())); }
+  // clean prize values shown on each cell; match 3 of a value to win it
+  const prizes=[0,0,0,10,10,25,25,50,100,250];
+  const cells=[]; for(let i=0;i<9;i++){ cells.push(prizes[(Math.random()*prizes.length)|0]); }
   // luck: small chance to seed a jackpot triple
-  if(Math.random()<0.04*luckBonus()){ const v=500; cells[0]=cells[4]=cells[8]=Math.floor(v*payMul()); }
+  if(Math.random()<0.04*luckBonus()){ cells[0]=cells[4]=cells[8]=500; }
   scratchState={cells, revealed:Array(9).fill(false), done:false};
   scratchPanel.userData.redraw(); log('🎟️ New ticket! Scratch all 9.');
 }
@@ -405,11 +410,15 @@ function scratchAt(hit){
   scratchPanel.userData.redraw();
   if(scratchState.revealed.every(Boolean)){
     scratchState.done=true;
-    // win = match-3 of any value, else sum of pairs small. Simplify: pay total of matched triples + biggest cell bonus
+    // win = match 3+ of a value pays that value once per triple (no fractional consolation)
     const counts={}; scratchState.cells.forEach(v=>counts[v]=(counts[v]||0)+1);
-    let win=0; for(const v in counts){ if(counts[v]>=3 && +v>0) win+=(+v)*counts[v]; }
-    if(win===0) win=Math.floor(Math.max(...scratchState.cells)*0.2);
-    addTokens(win); log(`🎟️ Ticket → +${win}`); pulse(scratchPanel,0x3ddc84); reportWin(win,'Scratcher'); save(); refreshUpgrades();
+    let base=0; for(const v in counts){ if(+v>0) base += (+v) * Math.floor(counts[v]/3); }
+    // apply payout multiplier once, then crit, rounded to a clean number
+    let win = Math.round(base * payMul() / 5) * 5;
+    if(win>0 && Math.random()<critChance()){ win*=5; log('💥 CRIT!'); }
+    if(win>0){ addTokens(win); log(`🎟️ Ticket → +${win}`); pulse(scratchPanel,0x3ddc84); reportWin(win,'Scratcher'); }
+    else log('🎟️ No match — better luck next ticket.');
+    save(); refreshUpgrades();
   }
 }
 function drawScratch(ctx,w,h){
@@ -582,35 +591,46 @@ function handleMsg(data, conn){
 }
 
 // ---------- Voice chat (WebRTC audio, full mesh) ----------
-async function initMic(){
-  if(MP.localStream) return MP.localStream;
-  try { MP.localStream = await navigator.mediaDevices.getUserMedia({ audio:{echoCancellation:true,noiseSuppression:true}, video:false });
-    log('🎤 Mic on — voice chat enabled.'); }
-  catch(e){ log('🎤 Mic blocked — playing without voice.'); MP.localStream=null; }
-  return MP.localStream;
+// initMic returns a shared promise; calls below AWAIT it so a stream is always
+// attached before we answer/place a call (otherwise the audio is silent).
+function initMic(){
+  if(MP.micReady) return MP.micReady;
+  MP.micReady = (async ()=>{
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}, video:false });
+      MP.localStream = stream;
+      stream.getAudioTracks().forEach(t=>t.enabled=!VOICE.muted);
+      log('🎤 Mic on — voice chat enabled.');
+    } catch(e){ console.error('getUserMedia failed', e); log('🎤 Mic blocked — playing without voice.'); MP.localStream=null; }
+    return MP.localStream;
+  })();
+  return MP.micReady;
 }
+function unlockAudio(){ for(const id in MP.audioEls){ MP.audioEls[id].play().catch(()=>{}); } }
+addEventListener('pointerdown', unlockAudio);
 function attachRemoteAudio(id, stream){
   let el=MP.audioEls[id];
   if(!el){ el=document.createElement('audio'); el.autoplay=true; el.dataset.peer=id; document.body.appendChild(el); MP.audioEls[id]=el; }
   el.srcObject=stream; el.play().catch(()=>{});
 }
-function handleCall(call){
+async function handleCall(call){
+  await initMic();                       // ensure our stream is ready before answering
   call.answer(MP.localStream || undefined);
   call.on('stream', s=>attachRemoteAudio(call.peer, s));
   call.on('close', ()=>{ if(MP.audioEls[call.peer]){ MP.audioEls[call.peer].remove(); delete MP.audioEls[call.peer]; } });
   MP.calls[call.peer]=call;
 }
-function maybeCall(otherId){
+async function maybeCall(otherId){
   if(!MP.peer || otherId===MP.peer.id) return;
   if(MP.calls[otherId]) return;
-  // deterministic single initiator per pair
-  if(MP.peer.id < otherId){
-    const call=MP.peer.call(otherId, MP.localStream || undefined);
-    if(!call) return;
-    call.on('stream', s=>attachRemoteAudio(otherId, s));
-    call.on('close', ()=>{ if(MP.audioEls[otherId]){ MP.audioEls[otherId].remove(); delete MP.audioEls[otherId]; } });
-    MP.calls[otherId]=call;
-  }
+  if(MP.peer.id >= otherId) return;      // deterministic single initiator per pair
+  MP.calls[otherId]='pending';           // reserve synchronously to avoid double calls
+  await initMic();                       // wait for our mic before placing the call
+  const call=MP.peer.call(otherId, MP.localStream || undefined);
+  if(!call){ delete MP.calls[otherId]; return; }
+  call.on('stream', s=>attachRemoteAudio(otherId, s));
+  call.on('close', ()=>{ if(MP.audioEls[otherId]){ MP.audioEls[otherId].remove(); delete MP.audioEls[otherId]; } });
+  MP.calls[otherId]=call;
 }
 function applyRoster(ids){ (ids||[]).forEach(maybeCall); }
 function broadcastRoster(){
