@@ -1215,7 +1215,7 @@ let autoAccum=0;
 const clock=new THREE.Clock();
 function animate(){
   const dt=Math.min(0.05,clock.getDelta());
-  locomotion(dt); desktopControls(dt); resolveCollisions(); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt); stepEvents(dt);
+  locomotion(dt); desktopControls(dt); resolveCollisions(); updateHover(); stepBalls(dt); mpUpdate(dt); stepEvents(dt);
   // passive income
   if(S.autoLv>0 || (S.interestLv||0)>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum);
       let gain=S.autoLv*g*Math.max(1,Math.floor(payMul()));
