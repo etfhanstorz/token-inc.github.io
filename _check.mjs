@@ -181,11 +181,11 @@ const upgradeDefs = [
   // Tier 1
   { key:'critLv',    name:'CRIT',     icon:'💥', color:'#ff2e97', base:120, grow:1.7,  start:0, gx:0,gy:1, req:{key:'luckLv',lv:3}, desc:()=>'+3% to crit a win' },
   { key:'slotLuckLv',name:'SLOT ODDS',icon:'🎰', color:'#00eaff', base:90,  grow:1.6,  start:1, gx:1,gy:1, req:{key:'payLv',lv:3}, desc:()=>'Better slot symbols' },
-  { key:'plinkoLv',  name:'PLINKO',   icon:'🔵', color:'#b46bff', base:90,  grow:1.6,  start:1, gx:2,gy:1, req:{key:'autoLv',lv:1}, desc:()=>'Higher plinko slots' },
+  { key:'plinkoLv',  name:'SLOT BOOST',icon:'💎', color:'#b46bff', base:90,  grow:1.6,  start:1, gx:2,gy:1, req:{key:'slotLuckLv',lv:1}, desc:()=>'Better slot payouts' },
   // Tier 2
   { key:'wheelLv',   name:'WHEEL',    icon:'🎡', color:'#ffd34d', base:140, grow:1.65, start:0, gx:0,gy:2, req:{key:'critLv',lv:2}, desc:()=>'Better wheel odds' },
   { key:'diceLv',    name:'DICE',     icon:'🎲', color:'#5dd6ff', base:140, grow:1.65, start:0, gx:1,gy:2, req:{key:'slotLuckLv',lv:2}, desc:()=>'+2.5% dice odds' },
-  { key:'scratchLv', name:'SCRATCH',  icon:'🎟️', color:'#39ff14', base:140, grow:1.65, start:0, gx:2,gy:2, req:{key:'plinkoLv',lv:2}, desc:()=>'Better scratch luck' },
+  { key:'scratchLv', name:'SCRATCH',  icon:'🎟️', color:'#39ff14', base:140, grow:1.65, start:0, gx:2,gy:2, req:{key:'slotLuckLv',lv:2}, desc:()=>'Better scratch luck' },
   // Tier 3 — endgame
   { key:'megaCritLv',name:'MEGACRIT', icon:'⚡', color:'#ff2e97', base:400, grow:1.9,  start:0, gx:0,gy:3, req:{key:'critLv',lv:5}, desc:()=>'+2x crit multiplier' },
   { key:'fortuneLv', name:'FORTUNE',  icon:'🌟', color:'#ffe347', base:400, grow:1.9,  start:0, gx:1,gy:3, req:{key:'payLv',lv:6}, desc:()=>'+8% to ALL payouts' },
@@ -322,7 +322,7 @@ updateHUD = function(){ _updateHUD(); refreshStats(); };
 // ==================================================================
 const SYMS = ['🍒','🍋','🔔','⭐','💎','7️⃣'];
 const SYM_PAY = { '🍒':3,'🍋':5,'🔔':10,'⭐':20,'💎':50,'7️⃣':100 };
-const slotGroup = new THREE.Group(); slotGroup.position.set(0,0,-9); scene.add(slotGroup);
+const slotGroup = new THREE.Group(); slotGroup.position.set(4.5,0,-8); slotGroup.rotation.y=-0.5; scene.add(slotGroup);
 const slotCab = new THREE.Mesh(new THREE.BoxGeometry(2.6,3.4,1), new THREE.MeshStandardMaterial({color:0x2a1140, metalness:0.4, roughness:0.4}));
 slotCab.position.y=1.7; slotGroup.add(slotCab);
 let slotReels = ['🍒','🍋','🔔'];
@@ -366,59 +366,11 @@ function resolveSlots(r){
   let win=0;
   if(r[0]===r[1]&&r[1]===r[2]) win = SYM_PAY[r[0]]*10;
   else if(r[0]===r[1]||r[1]===r[2]||r[0]===r[2]){ const s = r[0]===r[1]?r[0]:(r[1]===r[2]?r[1]:r[0]); win = SYM_PAY[s]; }
-  win = Math.floor(win*payMul());
+  win = Math.floor(win*payMul()*(1+(S.plinkoLv-1)*0.25));
   if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
   if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${fmt(win)}`); pulse(slotScreen,0xffd34d); reportWin(win,'Slots'); }
   else log(`🎰 ${r.join(' ')} → no win`);
   save(); refreshUpgrades();
-}
-
-// ==================================================================
-// PLINKO
-// ==================================================================
-const plinkoGroup = new THREE.Group(); plinkoGroup.position.set(4.5,0,-8); plinkoGroup.rotation.y=-0.5; scene.add(plinkoGroup);
-const pBoard = new THREE.Mesh(new THREE.BoxGeometry(3,4,0.3), new THREE.MeshStandardMaterial({color:0x14163a, metalness:0.3, roughness:0.6}));
-pBoard.position.y=2.2; plinkoGroup.add(pBoard);
-// pegs
-const pegRows=10, pegMat=new THREE.MeshStandardMaterial({color:0x9b5dff,emissive:0x3a1a6a});
-for(let row=0;row<pegRows;row++){ const n=row+2; for(let i=0;i<n;i++){ const peg=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),pegMat); peg.position.set((i-(n-1)/2)*0.36, 3.4-row*0.38, 0.18); plinkoGroup.add(peg);} }
-// slot multipliers at bottom
-const PLINKO_MULT = [0.2,0.5,1,2,5,2,1,0.5,0.2];
-const plabels=[];
-for(let i=0;i<PLINKO_MULT.length;i++){
-  const m=PLINKO_MULT[i];
-  const lab=makePanel(0.34,0.4,(c,w,h)=>{ c.fillStyle = m>=2?'#ffd34d':(m>=1?'#5dd6ff':'#3a3f66'); roundRect(c,2,2,w-4,h-4,8); c.fill(); c.fillStyle='#0a0c1a'; c.font='bold 44px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m+'x',w/2,h/2); };
-  lab.position.set((i-(PLINKO_MULT.length-1)/2)*0.36, 0.45, 0.2); plinkoGroup.add(lab); plabels.push(lab);
-}
-const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙'+fmt(20),w/2,h/2); }; dropBtn);
-dropBtn.position.set(0,0,0.2); plinkoGroup.add(dropBtn);
-registerInteractable(dropBtn, dropPlinko);
-const pLabel = makePanel(2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#9b5dff'; c.font='bold 58px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🔵 PLINKO',w/2,h/2); };
-pLabel.position.set(0,4.4,0.2); plinkoGroup.add(pLabel);
-const balls=[];
-function dropPlinko(){
-  const ball=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,12), new THREE.MeshStandardMaterial({color:0xffd34d, emissive:0x665010}));
-  ball.position.set((Math.random()-0.5)*0.2, 3.9, 0.25);
-  // luck biases drift toward center high slots
-  ball.userData.vx=(Math.random()-0.5)*0.02; ball.userData.vy=0; ball.userData.bias=(Math.random()-0.5)*0.004*(1+(S.plinkoLv-1)*0.3);
-  plinkoGroup.add(ball); balls.push(ball);
-}
-function stepBalls(dt){
-  for(let i=balls.length-1;i>=0;i--){ const b=balls[i];
-    b.userData.vy -= 1.8*dt; b.position.y += b.userData.vy*dt;
-    b.position.x += b.userData.vx + b.userData.bias;
-    // bounce against pegs region randomness
-    if(b.position.y < 3.4 && b.position.y>0.6 && Math.random()<0.3){ b.userData.vx += (Math.random()-0.5)*0.04; }
-    b.userData.vx*=0.96;
-    if(b.position.x<-1.45){b.position.x=-1.45;b.userData.vx*=-0.5;} if(b.position.x>1.45){b.position.x=1.45;b.userData.vx*=-0.5;}
-    if(b.position.y<=0.5){
-      let idx=Math.round(b.position.x/0.36 + (PLINKO_MULT.length-1)/2); idx=Math.max(0,Math.min(PLINKO_MULT.length-1,idx));
-      let win=Math.floor(20*PLINKO_MULT[idx]*payMul());
-      if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
-      addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${fmt(win)}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko');
-      plinkoGroup.remove(b); balls.splice(i,1); save(); refreshUpgrades();
-    }
-  }
 }
 
 // ==================================================================
@@ -1224,7 +1176,7 @@ let autoAccum=0;
 const clock=new THREE.Clock();
 function animate(){
   const dt=Math.min(0.05,clock.getDelta());
-  locomotion(dt); desktopControls(dt); resolveCollisions(); updateHover(); stepBalls(dt); stepWheel(dt); mpUpdate(dt); stepEvents(dt);
+  locomotion(dt); desktopControls(dt); resolveCollisions(); updateHover(); stepWheel(dt); mpUpdate(dt); stepEvents(dt);
   // passive income
   if(S.autoLv>0 || (S.interestLv||0)>0){ autoAccum+=dt; if(autoAccum>=1){ const g=Math.floor(autoAccum);
       let gain=S.autoLv*g*Math.max(1,Math.floor(payMul()));

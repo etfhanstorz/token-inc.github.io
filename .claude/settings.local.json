@@ -14,7 +14,13 @@
       "Bash(NODE_TLS_REJECT_UNAUTHORIZED=0 timeout 5 npm start)",
       "Bash(NODE_TLS_REJECT_UNAUTHORIZED=0 npm start)",
       "WebFetch(domain:github.com)",
-      "Bash(git rebase *)"
+      "Bash(git rebase *)",
+      "Bash(gh api *)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(curl -s \"https://etfhanstorz.github.io/index.html\")",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/etfhanstorz/token-inc.github.io/main/index.html\")",
+      "Bash(git commit *)"
     ]
   }
 }

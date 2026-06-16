@@ -316,7 +316,7 @@ function nodePos(def){ return { x:(def.gx-1)*3.0, z:5.5 + def.gy*2.2 }; }
 
 const treeGroup = new THREE.Group(); scene.add(treeGroup);
 // entrance sign
-const treeSign = makePanel(2.4,0.5,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 70px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('⬆ UPGRADES', w/2,h/2); });
+const treeSign = makePanel(2.4,0.5,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 70px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('⬆ UPGRADES', w/2,h/2); };
 treeSign.position.set(0,2.4,4.7); treeSign.rotation.y=Math.PI; treeGroup.add(treeSign);
 
 // branches along the ground connecting each upgrade to its prerequisite
@@ -387,26 +387,6 @@ refreshConnectors();
 const critMult   = () => 5 + (S.megaCritLv||0)*2 + (S.infinityLv||0)*5;
 
 // ==================================================================
-// BET SIZING — raise/lower a global bet multiplier (cost & payout scale)
-// ==================================================================
-const BET_OPTIONS=[1,2,5,10,25,50,100,250,1000,5000,10000,25000,50000,100000,125000,150000,175000,250000,500000,1000000,1250000,1500000];
-if(!S.betMul || BET_OPTIONS.indexOf(S.betMul)<0) S.betMul=1;
-function bet(){ return S.betMul||1; }
-const betLabels=[]; // machine cost labels that redraw when bet changes
-function refreshBet(){ betDisplay.userData.redraw(); betLabels.forEach(b=>b.userData.redraw()); }
-function cycleBet(dir){
-  // raising bet you can't afford the smallest game is allowed; it's just a multiplier
-  let i=BET_OPTIONS.indexOf(S.betMul); i=(i+dir+BET_OPTIONS.length)%BET_OPTIONS.length;
-  S.betMul=BET_OPTIONS[i]; save(); refreshBet(); sfxClick();
-}
-const betConsole=new THREE.Group(); betConsole.position.set(0,0.72,2.7); betConsole.scale.setScalar(0.8); scene.add(betConsole);
-const betLabelTop=makePanel(1.6,0.3,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 60px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('💵 BET SIZE', w/2,h/2); });
-betLabelTop.position.set(0,0.42,0); betConsole.add(betLabelTop);
-const betDisplay=makePanel(1.5,0.55,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='rgba(8,4,24,0.88)'; roundRect(c,4,4,w-8,h-8,16); c.fill(); c.lineWidth=6; c.strokeStyle='#ffd34d'; c.stroke(); c.fillStyle='#ffe347'; c.font='bold 74px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('x'+fmt(bet()), w/2,h/2); });
-betDisplay.position.set(0,0,0); betConsole.add(betDisplay);
-function betArrow(sym,col){ return makePanel(0.5,0.5,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle=col; roundRect(c,4,4,w-8,h-8,14); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 80px "Courier New",monospace'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(sym,w/2,h/2+4); }); }
-const betDown=betArrow('−','#ff5db1'); betDown.position.set(-1.02,0,0); betConsole.add(betDown); registerInteractable(betDown, ()=>cycleBet(-1));
-const betUp=betArrow('+','#3ddc84'); betUp.position.set(1.02,0,0); betConsole.add(betUp); registerInteractable(betUp, ()=>cycleBet(1));
 
 // pulse animation helper
 const pulses=[];
@@ -432,9 +412,9 @@ function refreshStats(){ statsPanel.userData.redraw(); }
 const muteBtn = makePanel(0.28,0.18,(c,w,h)=>{ c.clearRect(0,0,w,h); const m=VOICE.muted;
   c.fillStyle=m?'rgba(60,12,20,0.92)':'rgba(8,20,12,0.92)'; roundRect(c,2,2,w-4,h-4,18); c.fill();
   c.lineWidth=4; c.strokeStyle=m?'#ff3b5b':'#3ddc84'; c.stroke();
-  c.fillStyle='#fff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m?'🔇':'🎤', w/2, h/2); });
+  c.fillStyle='#fff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m?'🔇':'🎤', w/2, h/2); };
 muteBtn.position.set(0.42,-0.32,-0.9); muteBtn.rotation.x=-0.5; camera.add(muteBtn);
-registerInteractable(muteBtn, ()=>{ toggleMute(); muteBtn.userData.redraw(); });
+registerInteractable(muteBtn, ()=>{ toggleMute(); muteBtn.userData.redraw(); };
 // the in-world HUD is for VR only; flat screens (desktop/mobile) use the DOM HUD
 statsPanel.visible=false; muteBtn.visible=false;
 // keep the in-world board in sync with the DOM HUD
@@ -463,7 +443,7 @@ function rebuildPlinko(){
   const slotW=0.34, slotH=0.4, spacing=0.36;
   for(let i=0;i<mults.length;i++){
     const m=mults[i];
-    const lab=makePanel(slotW,slotH,(c,w,h)=>{ const col = m>0?'#ffd34d':(m<0?'#ff5566':'#3a3f66'); c.fillStyle=col; roundRect(c,2,2,w-4,h-4,8); c.fill(); c.fillStyle='#0a0c1a'; c.font='bold 40px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText((m>0?'+':'')+m+'x',w/2,h/2); });
+    const lab=makePanel(slotW,slotH,(c,w,h)=>{ const col = m>0?'#ffd34d':(m<0?'#ff5566':'#3a3f66'); c.fillStyle=col; roundRect(c,2,2,w-4,h-4,8); c.fill(); c.fillStyle='#0a0c1a'; c.font='bold 40px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText((m>0?'+':'')+m+'x',w/2,h/2); };
     lab.position.set((i-(mults.length-1)/2)*spacing, 0.45, 0.2); plinkoGroup.add(lab); plabels.push(lab);
   }
   // pegs scale with board width
@@ -483,15 +463,13 @@ const scoreboard=makePanel(scoreboardW,scoreboardH,(c,w,h)=>{
   if(mults.length>rows){ c.fillStyle='#6b7396'; c.font=(fontSize-4)+'px monospace'; c.fillText('+'+(mults.length-rows)+' more',16,8+(rows+1.2)*fontSize); }
 });
 scoreboard.position.set(-4.5, 2, -8); plinkoGroup.add(scoreboard);
-const pLabel = makePanel(2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#9b5dff'; c.font='bold 58px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🔵 PLINKO',w/2,h/2); });
+const pLabel = makePanel(2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#9b5dff'; c.font='bold 58px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🔵 PLINKO',w/2,h/2); };
 pLabel.position.set(0,4.8,0.2); plinkoGroup.add(pLabel);
-const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙'+fmt(20*bet()),w/2,h/2); }); betLabels.push(dropBtn);
+const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙'+fmt(20),w/2,h/2); }; dropBtn);
 dropBtn.position.set(0,-0.2,0.2); plinkoGroup.add(dropBtn);
 registerInteractable(dropBtn, dropPlinko);
 const balls=[];
 function dropPlinko(){
-  { const cost=0; if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' for plinko'); return; }
-  addTokens(-cost); save(); }
   const ball=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,12), new THREE.MeshStandardMaterial({color:0xffd34d, emissive:0x8a7030, emissiveIntensity:0.5, metalness:0.7}));
   ball.position.set((Math.random()-0.5)*0.2, 3.9, 0.25);
   ball.userData.vx=(Math.random()-0.5)*0.02; ball.userData.vy=0; ball.userData.bias=(Math.random()-0.5)*0.004*(1+(S.plinkoLv-1)*0.15);
@@ -505,7 +483,7 @@ function stepBalls(dt){
     if(b.position.x<-halfW){b.position.x=-halfW;b.userData.vx*=-0.5;} if(b.position.x>halfW){b.position.x=halfW;b.userData.vx*=-0.5;}
     if(b.position.y<=0.5){
       let idx=Math.round(b.position.x/0.36 + (mults.length-1)/2); idx=Math.max(0,Math.min(mults.length-1,idx));
-      let win=Math.floor(20*mults[idx]*payMul()*bet());
+      let win=Math.floor(20*mults[idx]*payMul());
       if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
       if(win>0){ addTokens(win); log(`🔵 Plinko ${mults[idx]}x → +${fmt(win)}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko'); }
       else { addTokens(win); log(`🔵 Plinko ${mults[idx]}x → Lost ${fmt(Math.abs(win))}`); pulse(plabels[idx],0xff5566); }
@@ -520,67 +498,67 @@ rebuildPlinko();
 // BLACKJACK
 // ==================================================================
 let bjHand=[], bjDealerCard=0, bjOver=false;
-const bjBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 36px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('BLACKJACK 🂡', w/2, h/2); });
+const bjBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 36px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('BLACKJACK 🂡', w/2, h/2); };
 bjBtn.position.set(-9.5,-5.2,1); scene.add(bjBtn);
 const bjBtns=[
   {pos:{x:-10.5,y:-4.2}, label:'HIT', tap:()=>{ if(bjOver) return; bjHand.push((Math.random()*13+1)|0); const s=bjHand.reduce((a,b)=>a+b); if(s>21){ log('🂡 Bust! You lose.'); bjOver=true; } else { log('🂡 Hit: '+s); } }},
-  {pos:{x:-9.5,y:-4.2}, label:'STAND', tap:()=>{ if(bjOver) return; const yours=bjHand.reduce((a,b)=>a+b); const d=bjDealerCard+(Math.random()*10+5)|0; const win = yours<=21 && yours>d ? Math.floor(50*payMul()*bet()) : 0; if(win>0) { addTokens(win); log('🂡 Won! Dealer: '+d+' → +'+fmt(win)); reportWin(win,'Blackjack'); } else { log('🂡 Dealer: '+d+' wins'); } bjOver=true; save(); refreshUpgrades(); }},
-  {pos:{x:-8.5,y:-4.2}, label:'NEW HAND', tap:()=>{ if(!bjOver) { log('Finish your hand first'); return; } const cost=35*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); bjHand=[]; bjDealerCard=(Math.random()*11+10)|0; bjOver=false; log('🂡 New hand started. Bet: 🪙'+fmt(cost)); }},
+  {pos:{x:-9.5,y:-4.2}, label:'STAND', tap:()=>{ if(bjOver) return; const yours=bjHand.reduce((a,b)=>a+b); const d=bjDealerCard+(Math.random()*10+5)|0; const win = yours<=21 && yours>d ? Math.floor(50*payMul()) : 0; if(win>0) { addTokens(win); log('🂡 Won! Dealer: '+d+' → +'+fmt(win)); reportWin(win,'Blackjack'); } else { log('🂡 Dealer: '+d+' wins'); } bjOver=true; save(); refreshUpgrades(); }},
+  {pos:{x:-8.5,y:-4.2}, label:'NEW HAND', tap:()=>{ if(!bjOver) { log('Finish your hand first'); return; } const cost=35; if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); bjHand=[]; bjDealerCard=(Math.random()*11+10)|0; bjOver=false; log('🂡 New hand started. Bet: 🪙'+fmt(cost)); }},
 ];
-bjBtns.forEach(o=>{ const b=makePanel(0.8,0.4,(c,w,h)=>{ c.fillStyle='#1b2140'; roundRect(c,0,0,w,h,16); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 28px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(o.label, w/2, h/2); }); b.position.set(o.pos.x,o.pos.y,1); scene.add(b); registerInteractable(b, o.tap); });
+bjBtns.forEach(o=>{ const b=makePanel(0.8,0.4,(c,w,h)=>{ c.fillStyle='#1b2140'; roundRect(c,0,0,w,h,16); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 28px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(o.label, w/2, h/2); }; b.position.set(o.pos.x,o.pos.y,1); scene.add(b); registerInteractable(b, o.tap); };
 
 // ==================================================================
 // KENO
 // ==================================================================
 let kenoSelection=[], kenoDrawn=[];
-const kenoBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#5dd6ff'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 38px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('KENO 🔢', w/2, h/2); });
+const kenoBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#5dd6ff'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 38px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('KENO 🔢', w/2, h/2); };
 kenoBtn.position.set(-7.5,-5.2,1); scene.add(kenoBtn);
-const kenoDrawBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#fff'; c.font='bold 32px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DRAW & WIN', w/2, h/2); });
+const kenoDrawBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#fff'; c.font='bold 32px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DRAW & WIN', w/2, h/2); };
 kenoDrawBtn.position.set(-7.5,-4.2,1); scene.add(kenoDrawBtn);
-registerInteractable(kenoDrawBtn, ()=>{ if(kenoSelection.length<5){ log('🔢 Pick 5 numbers first'); return; } const cost=40*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); kenoDrawn=[]; for(let i=0;i<20;i++) kenoDrawn.push((Math.random()*80+1)|0); const matches=kenoSelection.filter(n=>kenoDrawn.includes(n)).length; const payout=[0,0,10,30,200,1500].map(x=>Math.floor(x*payMul()*bet()))[matches]||0; if(payout>0) { addTokens(payout); log('🔢 Matched '+matches+' → +'+fmt(payout)); reportWin(payout,'Keno'); } else { log('🔢 No matches'); } save(); refreshUpgrades(); });
+registerInteractable(kenoDrawBtn, ()=>{ if(kenoSelection.length<5){ log('🔢 Pick 5 numbers first'); return; } const cost=40; if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); kenoDrawn=[]; for(let i=0;i<20;i++) kenoDrawn.push((Math.random()*80+1)|0); const matches=kenoSelection.filter(n=>kenoDrawn.includes(n)).length; const payout=[0,0,10,30,200,1500].map(x=>Math.floor(x*payMul()))[matches]||0; if(payout>0) { addTokens(payout); log('🔢 Matched '+matches+' → +'+fmt(payout)); reportWin(payout,'Keno'); } else { log('🔢 No matches'); } save(); refreshUpgrades(); };
 
 // ==================================================================
 // HIGH-LOW
 // ==================================================================
 let hlCard=0, hlGuessing=false;
-const hlBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#ff9b3d'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 36px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('HIGH-LOW 🃏', w/2, h/2); });
+const hlBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#ff9b3d'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 36px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('HIGH-LOW 🃏', w/2, h/2); };
 hlBtn.position.set(-5.5,-5.2,1); scene.add(hlBtn);
 const hlBtns=[
-  {pos:{x:-6.3,y:-4.2}, label:'HIGHER', tap:()=>{ if(!hlGuessing) return; const next=(Math.random()*13+1)|0; const win=next>hlCard ? Math.floor(45*payMul()*bet()) : 0; hlGuessing=false; if(win>0) { addTokens(win); log('🃏 Higher! '+next+' → +'+fmt(win)); reportWin(win,'High-Low'); } else { log('🃏 Card: '+next+', not higher'); } save(); refreshUpgrades(); }},
-  {pos:{x:-5.5,y:-4.2}, label:'LOWER', tap:()=>{ if(!hlGuessing) return; const next=(Math.random()*13+1)|0; const win=next<hlCard ? Math.floor(45*payMul()*bet()) : 0; hlGuessing=false; if(win>0) { addTokens(win); log('🃏 Lower! '+next+' → +'+fmt(win)); reportWin(win,'High-Low'); } else { log('🃏 Card: '+next+', not lower'); } save(); refreshUpgrades(); }},
-  {pos:{x:-4.7,y:-4.2}, label:'DEAL', tap:()=>{ if(hlGuessing) { log('Finish your guess'); return; } const cost=30*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); hlCard=(Math.random()*13+1)|0; hlGuessing=true; log('🃏 Card: '+hlCard+'. Higher or Lower?'); }},
+  {pos:{x:-6.3,y:-4.2}, label:'HIGHER', tap:()=>{ if(!hlGuessing) return; const next=(Math.random()*13+1)|0; const win=next>hlCard ? Math.floor(45*payMul()) : 0; hlGuessing=false; if(win>0) { addTokens(win); log('🃏 Higher! '+next+' → +'+fmt(win)); reportWin(win,'High-Low'); } else { log('🃏 Card: '+next+', not higher'); } save(); refreshUpgrades(); }},
+  {pos:{x:-5.5,y:-4.2}, label:'LOWER', tap:()=>{ if(!hlGuessing) return; const next=(Math.random()*13+1)|0; const win=next<hlCard ? Math.floor(45*payMul()) : 0; hlGuessing=false; if(win>0) { addTokens(win); log('🃏 Lower! '+next+' → +'+fmt(win)); reportWin(win,'High-Low'); } else { log('🃏 Card: '+next+', not lower'); } save(); refreshUpgrades(); }},
+  {pos:{x:-4.7,y:-4.2}, label:'DEAL', tap:()=>{ if(hlGuessing) { log('Finish your guess'); return; } const cost=30; if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); hlCard=(Math.random()*13+1)|0; hlGuessing=true; log('🃏 Card: '+hlCard+'. Higher or Lower?'); }},
 ];
-hlBtns.forEach(o=>{ const b=makePanel(0.75,0.4,(c,w,h)=>{ c.fillStyle='#1b2140'; roundRect(c,0,0,w,h,16); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 24px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(o.label, w/2, h/2); }); b.position.set(o.pos.x,o.pos.y,1); scene.add(b); registerInteractable(b, o.tap); });
+hlBtns.forEach(o=>{ const b=makePanel(0.75,0.4,(c,w,h)=>{ c.fillStyle='#1b2140'; roundRect(c,0,0,w,h,16); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 24px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(o.label, w/2, h/2); }; b.position.set(o.pos.x,o.pos.y,1); scene.add(b); registerInteractable(b, o.tap); };
 
 // ==================================================================
 // SPINNING WHEEL
 // ==================================================================
 let wheelSpinning2=false;
-const wheelBtn2=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#ffcf6a'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 38px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN WHEEL 🎡', w/2, h/2); });
+const wheelBtn2=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#ffcf6a'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 38px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN WHEEL 🎡', w/2, h/2); };
 wheelBtn2.position.set(-3.5,-5.2,1); scene.add(wheelBtn2);
-const spinWheelBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#06210f'; c.font='bold 32px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN!', w/2, h/2); });
+const spinWheelBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#06210f'; c.font='bold 32px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN!', w/2, h/2); };
 spinWheelBtn.position.set(-3.5,-4.2,1); scene.add(spinWheelBtn);
-registerInteractable(spinWheelBtn, ()=>{ if(wheelSpinning2){ log('Already spinning'); return; } const cost=45*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); wheelSpinning2=true; const mults=[0.5,1,2,5,0.2,3,1.5,2.5]; const m=mults[(Math.random()*mults.length)|0]; const win=Math.floor(cost*m*payMul()); addTokens(win); log('🎡 '+m+'x → +'+fmt(win)); reportWin(win,'Spin Wheel'); wheelSpinning2=false; save(); refreshUpgrades(); });
+registerInteractable(spinWheelBtn, ()=>{ if(wheelSpinning2){ log('Already spinning'); return; } const cost=45; if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); wheelSpinning2=true; const mults=[0.5,1,2,5,0.2,3,1.5,2.5]; const m=mults[(Math.random()*mults.length)|0]; const win=Math.floor(cost*m*payMul()); addTokens(win); log('🎡 '+m+'x → +'+fmt(win)); reportWin(win,'Spin Wheel'); wheelSpinning2=false; save(); refreshUpgrades(); };
 
 // ==================================================================
 // CARD FLIP
 // ==================================================================
 let cardFlipPairs=[], cardFlipRevealed=[], cardFlipMatched=0;
-const cfBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#ff5db1'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#fff'; c.font='bold 36px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('CARD FLIP 🎴', w/2, h/2); });
+const cfBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#ff5db1'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#fff'; c.font='bold 36px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('CARD FLIP 🎴', w/2, h/2); };
 cfBtn.position.set(-1.5,-5.2,1); scene.add(cfBtn);
-const cfStartBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#b46bff'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#fff'; c.font='bold 28px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('NEW GAME 🎴', w/2, h/2); });
+const cfStartBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#b46bff'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#fff'; c.font='bold 28px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('NEW GAME 🎴', w/2, h/2); };
 cfStartBtn.position.set(-1.5,-4.2,1); scene.add(cfStartBtn);
-registerInteractable(cfStartBtn, ()=>{ const cost=35*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); cardFlipPairs=[]; for(let i=0;i<8;i++) cardFlipPairs.push(i,i); cardFlipPairs.sort(()=>Math.random()-0.5); cardFlipRevealed=new Array(16).fill(false); cardFlipMatched=0; log('🎴 New game: match '+cost+' bet.'); });
+registerInteractable(cfStartBtn, ()=>{ const cost=35; if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); cardFlipPairs=[]; for(let i=0;i<8;i++) cardFlipPairs.push(i,i); cardFlipPairs.sort(()=>Math.random()-0.5); cardFlipRevealed=new Array(16).fill(false); cardFlipMatched=0; log('🎴 New game: match '+cost+' bet.'); };
 
 // ==================================================================
 // BINGO
 // ==================================================================
 let bingoCard=[], bingoDrawn=[], bingoWon=false;
-const bingoBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#00eaff'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 38px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('BINGO 🎰', w/2, h/2); });
+const bingoBtn=makePanel(0.95,0.5,(c,w,h)=>{ c.fillStyle='#00eaff'; roundRect(c,0,0,w,h,24); c.fill(); c.fillStyle='#06210f'; c.font='bold 38px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('BINGO 🎰', w/2, h/2); };
 bingoBtn.position.set(0.5,-5.2,1); scene.add(bingoBtn);
-const bingoDrawBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#06210f'; c.font='bold 32px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DRAW', w/2, h/2); });
+const bingoDrawBtn=makePanel(0.9,0.45,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#06210f'; c.font='bold 32px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DRAW', w/2, h/2); };
 bingoDrawBtn.position.set(0.5,-4.2,1); scene.add(bingoDrawBtn);
-registerInteractable(bingoDrawBtn, ()=>{ if(!bingoCard.length){ const cost=50*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); bingoCard=new Array(25).fill(0).map(()=>(Math.random()*90+1)|0); bingoDrawn=[]; bingoWon=false; log('🎰 New BINGO card! Match 5 in a row.'); } else { const num=(Math.random()*90+1)|0; if(!bingoDrawn.includes(num)) bingoDrawn.push(num); const bingo=bingoCard.some((r,i)=>i%5===0&&bingoCard.slice(i,i+5).every(n=>bingoDrawn.includes(n))); if(bingo && !bingoWon) { bingoWon=true; const win=Math.floor(200*payMul()*bet()); addTokens(win); log('🎰 BINGO! → +'+fmt(win)); reportWin(win,'Bingo'); bingoCard=[]; } } save(); refreshUpgrades(); });
+registerInteractable(bingoDrawBtn, ()=>{ if(!bingoCard.length){ const cost=50; if(S.tokens<cost){ log('Need 🪙'+fmt(cost)); return; } addTokens(-cost); bingoCard=new Array(25).fill(0).map(()=>(Math.random()*90+1)|0); bingoDrawn=[]; bingoWon=false; log('🎰 New BINGO card! Match 5 in a row.'); } else { const num=(Math.random()*90+1)|0; if(!bingoDrawn.includes(num)) bingoDrawn.push(num); const bingo=bingoCard.some((r,i)=>i%5===0&&bingoCard.slice(i,i+5).every(n=>bingoDrawn.includes(n))); if(bingo && !bingoWon) { bingoWon=true; const win=Math.floor(200*payMul()); addTokens(win); log('🎰 BINGO! → +'+fmt(win)); reportWin(win,'Bingo'); bingoCard=[]; } } save(); refreshUpgrades(); };
 
 // ==================================================================
 // CONTROLLERS + RAY INTERACTION
@@ -726,13 +704,13 @@ addEventListener('pointerdown', unlockAudio);
 function attachRemoteAudio(id, stream){
   let el=MP.audioEls[id];
   if(!el){ el=document.createElement('audio'); el.autoplay=true; el.dataset.peer=id; document.body.appendChild(el); MP.audioEls[id]=el; log('🔊 Hearing a player.'); }
-  el.srcObject=stream; el.play().catch(e=>{ log('🔊 Tap the screen to enable audio.'); });
+  el.srcObject=stream; el.play().catch(e=>{ log('🔊 Tap the screen to enable audio.'); };
 }
 async function handleCall(call){
   await initMic();                       // ensure our stream is ready before answering
   call.answer(MP.localStream || undefined);
   call.on('stream', s=>attachRemoteAudio(call.peer, s));
-  call.on('error', e=>{ console.error('call error', e); log('🔇 Voice connect failed.'); });
+  call.on('error', e=>{ console.error('call error', e); log('🔇 Voice connect failed.'); };
   call.on('close', ()=>{ if(MP.audioEls[call.peer]){ MP.audioEls[call.peer].remove(); delete MP.audioEls[call.peer]; } });
   MP.calls[call.peer]=call;
 }
@@ -745,7 +723,7 @@ async function maybeCall(otherId){
   const call=MP.peer.call(otherId, MP.localStream || undefined);
   if(!call){ delete MP.calls[otherId]; return; }
   call.on('stream', s=>attachRemoteAudio(otherId, s));
-  call.on('error', e=>{ console.error('call error', e); log('🔇 Voice connect failed.'); });
+  call.on('error', e=>{ console.error('call error', e); log('🔇 Voice connect failed.'); };
   call.on('close', ()=>{ if(MP.audioEls[otherId]){ MP.audioEls[otherId].remove(); delete MP.audioEls[otherId]; } });
   MP.calls[otherId]=call;
 }
@@ -774,16 +752,16 @@ function hostRoom(code){
   MP.isHost=true; MP.id='casino-'+code;
   setMpStatus('connecting…');
   MP.peer=new Peer(MP.id, PEER_OPTS);
-  MP.peer.on('open', id=>{ setMpStatus('hosting "'+code+'" 🎤'); log('🌐 Hosting room "'+code+'" (id '+id+'). Share the code.'); });
+  MP.peer.on('open', id=>{ setMpStatus('hosting "'+code+'" 🎤'); log('🌐 Hosting room "'+code+'" (id '+id+'). Share the code.'); };
   MP.peer.on('call', handleCall);
   MP.peer.on('connection', conn=>{
-    conn.on('open', ()=>{ MP.conns.push(conn); setMpStatus('hosting "'+code+'" • '+(MP.conns.length+1)+' players 🎤'); log('🌐 A player joined.'); broadcastRoster(); });
+    conn.on('open', ()=>{ MP.conns.push(conn); setMpStatus('hosting "'+code+'" • '+(MP.conns.length+1)+' players 🎤'); log('🌐 A player joined.'); broadcastRoster(); };
     conn.on('data', d=>handleMsg(d, conn));
-    conn.on('close', ()=>{ MP.conns=MP.conns.filter(c=>c!==conn); if(conn.peer){ removeAvatar(conn.peer); if(MP.audioEls[conn.peer]){MP.audioEls[conn.peer].remove(); delete MP.audioEls[conn.peer];} delete MP.calls[conn.peer]; } broadcastRoster(); });
+    conn.on('close', ()=>{ MP.conns=MP.conns.filter(c=>c!==conn); if(conn.peer){ removeAvatar(conn.peer); if(MP.audioEls[conn.peer]){MP.audioEls[conn.peer].remove(); delete MP.audioEls[conn.peer];} delete MP.calls[conn.peer]; } broadcastRoster(); };
   });
   MP.peer.on('error', e=>{ console.error('PeerJS host error', e); const t=e.type||'error';
     log('🌐 Host error: '+t+(t==='unavailable-id'?' (room code in use — pick another or wait ~30s)':''));
-    setMpStatus('error: '+t); });
+    setMpStatus('error: '+t); };
 }
 function joinRoom(code){
   if(typeof Peer==='undefined'){ log('Multiplayer lib failed to load'); setMpStatus('lib error'); return; }
@@ -794,13 +772,13 @@ function joinRoom(code){
   MP.peer.on('open', ()=>{
     const conn=MP.peer.connect('casino-'+code, {reliable:false});
     MP.hostConn=conn;
-    conn.on('open', ()=>{ setMpStatus('joined "'+code+'" 🎤'); log('🌐 Connected to room "'+code+'".'); });
+    conn.on('open', ()=>{ setMpStatus('joined "'+code+'" 🎤'); log('🌐 Connected to room "'+code+'".'); };
     conn.on('data', d=>handleMsg(d, conn));
-    conn.on('close', ()=>{ setMpStatus('disconnected'); log('🌐 Lost connection to host.'); });
+    conn.on('close', ()=>{ setMpStatus('disconnected'); log('🌐 Lost connection to host.'); };
   });
   MP.peer.on('error', e=>{ console.error('PeerJS join error', e); const t=e.type||'error';
     log('🌐 Join error: '+t+(t==='peer-unavailable'?' (no host with that code yet)':''));
-    setMpStatus('error: '+t); });
+    setMpStatus('error: '+t); };
 }
 let mpSendAccum=0;
 function mpUpdate(dt){
@@ -810,7 +788,7 @@ function mpUpdate(dt){
   for(const id in MP.avatars){ const a=MP.avatars[id];
     if(a.lastSeen && now-a.lastSeen>5000){ removeAvatar(id); continue; }
     a.head.position.lerp(a.t.head.p, 0.3); a.head.quaternion.slerp(a.t.head.q, 0.3);
-    a.hands.forEach((h,i)=>{ h.position.lerp(a.t.hands[i].p,0.3); h.quaternion.slerp(a.t.hands[i].q,0.3); });
+    a.hands.forEach((h,i)=>{ h.position.lerp(a.t.hands[i].p,0.3); h.quaternion.slerp(a.t.hands[i].q,0.3); };
     if(a.tag){ a.tag.lookAt(camera.getWorldPosition(new THREE.Vector3())); }
   }
 }
@@ -856,7 +834,7 @@ function buildDecor(){
   // big CASINO sign over the entrance (warm marquee, no neon party gradient)
   const sign=makePanel(6,1.2,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='rgba(20,12,6,0.85)'; roundRect(c,0,0,w,h,24); c.fill();
     c.lineWidth=8; c.strokeStyle='#ffcf6a'; c.stroke();
-    c.fillStyle='#ffcf6a'; c.font='bold 150px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('★ CASINO ★', w/2, h/2); });
+    c.fillStyle='#ffcf6a'; c.font='bold 150px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('★ CASINO ★', w/2, h/2); };
   sign.position.set(0,5.4,-11.4); scene.add(sign);
   // a few distant bushes/trees on the hills for life
   for(let i=0;i<22;i++){ const a=Math.random()*Math.PI*2, R=22+Math.random()*40; const x=Math.cos(a)*R, z=Math.sin(a)*R; const gy=terrainH(x,z);
@@ -884,7 +862,7 @@ const eventBanner=makePanel(5,0.8,(c,w,h)=>{ c.clearRect(0,0,w,h); if(!AE.name) 
   c.lineWidth=6; c.strokeStyle=AE.color||'#ffd34d'; c.stroke();
   const left=Math.max(0,(AE.until-performance.now())/1000);
   c.fillStyle=AE.color||'#ffd34d'; c.font='bold 70px Segoe UI'; c.textAlign='center'; c.textBaseline='middle';
-  c.fillText(AE.name+'  ·  '+left.toFixed(0)+'s', w/2, h/2); });
+  c.fillText(AE.name+'  ·  '+left.toFixed(0)+'s', w/2, h/2); };
 eventBanner.position.set(0,4.6,-8.9); eventBanner.visible=false; scene.add(eventBanner);
 
 // Announcement banner (admin chat messages)
@@ -1007,9 +985,9 @@ function connectAdminBridge(){
   try{
     mqttClient=mqtt.connect('wss://broker.emqx.io:8084/mqtt', { reconnectPeriod:4000, connectTimeout:8000 });
     const topic='tokencasino/'+ADMIN_CHANNEL+'/cmd';
-    mqttClient.on('connect', ()=>{ mqttClient.subscribe(topic); log('🔗 Admin bridge connected.'); });
-    mqttClient.on('message', (t,payload)=>{ applyAdmin(payload.toString()); });
-    mqttClient.on('error', e=>{ console.error('MQTT error',e); });
+    mqttClient.on('connect', ()=>{ mqttClient.subscribe(topic); log('🔗 Admin bridge connected.'); };
+    mqttClient.on('message', (t,payload)=>{ applyAdmin(payload.toString()); };
+    mqttClient.on('error', e=>{ console.error('MQTT error',e); };
   }catch(e){ console.error('MQTT connect failed', e); }
 }
 connectAdminBridge();
@@ -1059,7 +1037,7 @@ function stepEvents(dt){
   if(AE.rain && Math.random()<0.6) spawnRainCoin();
   for(const c of rainPool){ if(!c.active) continue; c.m.position.y+=c.vy*dt; c.m.rotation.z+=c.spin; if(c.m.position.y<0.1){ c.active=false; c.m.visible=false; } }
   // disco
-  if(AE.disco){ discoBall.rotation.y+=dt*1.5; const ti=t*0.004; discoLights.forEach((l,i)=>{ l.intensity=2+Math.sin(ti+i)*1.5; l.target.position.set(Math.cos(ti+i*1.3)*7,0,Math.sin(ti+i*1.7)*7-2); }); }
+  if(AE.disco){ discoBall.rotation.y+=dt*1.5; const ti=t*0.004; discoLights.forEach((l,i)=>{ l.intensity=2+Math.sin(ti+i)*1.5; l.target.position.set(Math.cos(ti+i*1.3)*7,0,Math.sin(ti+i*1.7)*7-2); }; }
   else discoLights.forEach(l=>l.intensity=0);
   // sparkle drift
   if(decorState.sparks){ decorState.sparks.rotation.y+=dt*0.02; }
@@ -1111,7 +1089,7 @@ document.addEventListener('pointerlockchange', ()=>{
   if(!pointerLocked) for(const k in keys) keys[k]=false;
 });
 addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });
-addEventListener('mousemove', e=>{ if(!pointerLocked) return; yaw-=e.movementX*0.002; pitch-=e.movementY*0.002; pitch=Math.max(-1.4,Math.min(1.4,pitch)); });
+addEventListener('mousemove', e=>{ if(!pointerLocked) return; yaw-=e.movementX*0.002; pitch-=e.movementY*0.002; pitch=Math.max(-1.4,Math.min(1.4,pitch)); };
 const mobileMove={x:0,y:0}; // from on-screen joystick (-1..1)
 function desktopControls(dt){
   if(renderer.xr.isPresenting) return;
@@ -1200,7 +1178,7 @@ const colliders=[];
 function buildColliders(){
   [[0,-9,1.7],[4.5,-8,1.9],[-4.5,-8,1.6],[7,-3,1.6],[-7,-1,1.3],[0,2.7,1.0]].forEach(o=>colliders.push({x:o[0],z:o[1],r:o[2]}));
   for(let i=0;i<8;i++){ const a=i/8*Math.PI*2,R=10.6; colliders.push({x:Math.cos(a)*R,z:Math.sin(a)*R,r:0.4}); }
-  upgradeDefs.forEach(d=>{ const p=nodePos(d); colliders.push({x:p.x,z:p.z,r:0.95}); });
+  upgradeDefs.forEach(d=>{ const p=nodePos(d); colliders.push({x:p.x,z:p.z,r:0.95}); };
 }
 buildColliders();
 function resolveCollisions(){
@@ -1232,7 +1210,7 @@ function animate(){
 }
 renderer.setAnimationLoop(animate);
 
-addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); };
 
 // ---------- Enter button ----------
 const overlay=document.getElementById('overlay');
@@ -1241,12 +1219,12 @@ const enterBtn=document.getElementById('enterBtn');
 const vrBtn=VRButton.createButton(renderer); vrBtn.style.display='none'; document.body.appendChild(vrBtn);
 const crosshairEl=document.getElementById('crosshair');
 const domMute=document.getElementById('domMute');
-domMute.addEventListener('click', ()=>{ audio(); toggleMute(); });
+domMute.addEventListener('click', ()=>{ audio(); toggleMute(); };
 // admin panel wiring
-document.getElementById('ahFree').addEventListener('click', (e)=>{ freeBuy=!freeBuy; e.target.classList.toggle('on',freeBuy); e.target.textContent=freeBuy?'🆓 Free Mode: ON':'🆓 Free Mode'; log(freeBuy?'🆓 Everything is FREE':'Free mode off'); refreshUpgrades(); });
-document.getElementById('ahHammer').addEventListener('click', ()=>{ hammerActive=!hammerActive; updateHammerBtn(); log(hammerActive?'🔨 Ban hammer ON — tap a player to ban':'Ban hammer off'); });
-document.querySelectorAll('#adminPanel [data-give]').forEach(b=>b.addEventListener('click', ()=>{ addTokens(+b.dataset.give); flashScreen('#ffd34d'); sfxCoin(); save(); refreshUpgrades(); }));
-document.querySelectorAll('#adminPanel [data-ev]').forEach(b=>b.addEventListener('click', ()=>{ publishAdmin({cmd:'event', name:b.dataset.ev, seconds:30}); log('✨ Triggered '+b.dataset.ev+' for everyone'); }));
+document.getElementById('ahFree').addEventListener('click', (e)=>{ freeBuy=!freeBuy; e.target.classList.toggle('on',freeBuy); e.target.textContent=freeBuy?'🆓 Free Mode: ON':'🆓 Free Mode'; log(freeBuy?'🆓 Everything is FREE':'Free mode off'); refreshUpgrades(); };
+document.getElementById('ahHammer').addEventListener('click', ()=>{ hammerActive=!hammerActive; updateHammerBtn(); log(hammerActive?'🔨 Ban hammer ON — tap a player to ban':'Ban hammer off'); };
+document.querySelectorAll('#adminPanel [data-give]').forEach(b=>b.addEventListener('click', ()=>{ addTokens(+b.dataset.give); flashScreen('#ffd34d'); sfxCoin(); save(); refreshUpgrades(); });
+document.querySelectorAll('#adminPanel [data-ev]').forEach(b=>b.addEventListener('click', ()=>{ publishAdmin({cmd:'event', name:b.dataset.ev, seconds:30}); log('✨ Triggered '+b.dataset.ev+' for everyone'); });
 renderer.xr.addEventListener('sessionstart', ()=>{ crosshairEl.style.display='none'; statsPanel.visible=true; muteBtn.visible=true; domMute.style.display='none'; });
 renderer.xr.addEventListener('sessionend', ()=>{ crosshairEl.style.display='block'; statsPanel.visible=false; muteBtn.visible=false; });
 // username field
@@ -1259,7 +1237,7 @@ enterBtn.addEventListener('click', ()=>{
   domMute.style.display='block';
   if(adminMode){ document.getElementById('adminPanel').style.display='block'; updateHammerBtn(); }
   notifyPresence();
-  if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }); }
+  if(navigator.xr){ navigator.xr.isSessionSupported('immersive-vr').then(ok=>{ if(ok) vrBtn.click(); else log('No VR — desktop mode. Click to look/interact, WASD to move.'); }; }
   else log('Desktop mode. Click to look/interact, WASD to move.');
 });
 // reset progress
@@ -1269,7 +1247,7 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
     Object.assign(S,{tokens:100,luckLv:1,payLv:1,autoLv:0,plinkoLv:1,plinkoExpandLv:0,megaExpandLv:0,critLv:0,
       megaCritLv:0,fortuneLv:0,interestLv:0,
       overLv:0,cloverLv:0,vaultLv:0,cosmicLv:0,omniLv:0,eternityLv:0,infinityLv:0,apotheosisLv:0,
-      betMul:1,topWins:[],username:name});
+      topWins:[],username:name});
     save(); location.reload();
   }
 });
