@@ -111,8 +111,9 @@ const S = {
   luckLv: 1,        // increases win chance
   payLv: 1,         // payout multiplier level
   autoLv: 0,        // passive income per second
-  slotLuckLv: 1,
-  plinkoLv: 1,
+  plinkoLv: 1,      // ball luck boost
+  plinkoExpandLv: 0, // plinko board expansion
+  megaExpandLv: 0,   // mega expansion (= 2x plinkoExpand)
   critLv: 0,        // chance to multiply a win
   topWins: [],      // leaderboard of highest single payouts ever (desc)
 };
@@ -152,6 +153,7 @@ function notifyDiscord(amount, game, rank){
 // Trigger if this win is good enough to make the all-time top-N leaderboard.
 function reportWin(amount, game){
   if(amount<=0) return;
+  publishWin(amount, game);
   const board = S.topWins || (S.topWins=[]);
   const qualifies = board.length < LEADERBOARD_SIZE || amount > board[board.length-1];
   if(!qualifies) return;
@@ -177,9 +179,9 @@ const ADMIN_CHANNEL = 'token-casino-abcd1234';
 const AE = { luckMul:1, payMul:1, until:0, name:null, color:null, rain:false, disco:false };
 function aeActive(){ return AE.until>performance.now(); }
 
-const luckBonus = () => (1 + (S.luckLv-1)*0.04) * (1 + (S.cloverLv||0)*0.08) * (1 + (S.omniLv||0)*0.15) * (aeActive()?AE.luckMul:1);
-const payMul    = () => Math.max(0,(1 + (S.payLv-1)*0.35) * (1 + (S.fortuneLv||0)*0.08) * (1 + (S.overLv||0)*0.15) * (1 + (S.cosmicLv||0)*0.20) * (1 + (S.apotheosisLv||0)*0.5) * (aeActive()?AE.payMul:1));
-const critChance= () => Math.min(0.5, S.critLv*0.03);
+const luckBonus = () => (1 + (S.luckLv-1)*0.02) * (1 + (S.cloverLv||0)*0.04) * (1 + (S.omniLv||0)*0.08) * (aeActive()?AE.luckMul:1);
+const payMul    = () => Math.max(0,(1 + (S.payLv-1)*0.15) * (1 + (S.fortuneLv||0)*0.04) * (1 + (S.overLv||0)*0.08) * (1 + (S.cosmicLv||0)*0.10) * (1 + (S.apotheosisLv||0)*0.25) * (aeActive()?AE.payMul:1));
+const critChance= () => Math.min(0.5, S.critLv*0.015);
 
 // ---------- HUD ----------
 const tokEl = document.getElementById('tok');
@@ -221,13 +223,13 @@ scene.add(rig);
 rig.position.set(0,0,4);
 
 // Outdoor daylight lighting
-scene.add(new THREE.HemisphereLight(0xbcd6ff, 0x5a6a3a, 1.0));
-const key = new THREE.DirectionalLight(0xfff3d6, 1.1);
+scene.add(new THREE.HemisphereLight(0xbcd6ff, 0x5a6a3a, 1.2));
+const key = new THREE.DirectionalLight(0xfff3d6, 1.3);
 key.position.set(12,18,8); key.castShadow=true;
 key.shadow.mapSize.set(1024,1024); key.shadow.camera.near=1; key.shadow.camera.far=60;
 key.shadow.camera.left=-25; key.shadow.camera.right=25; key.shadow.camera.top=25; key.shadow.camera.bottom=-25;
 scene.add(key);
-const ambient = new THREE.AmbientLight(0xffffff, 0.25); scene.add(ambient);
+const ambient = new THREE.AmbientLight(0xffffff, 0.35); scene.add(ambient);
 
 // Sky dome (gradient) + horizon fog
 const skyCanvas=document.createElement('canvas'); skyCanvas.width=16; skyCanvas.height=256;
@@ -243,15 +245,18 @@ const sunMesh=new THREE.Mesh(new THREE.CircleGeometry(5,24), new THREE.MeshBasic
 sunMesh.position.set(34,30,-60); sunMesh.lookAt(0,2,0); scene.add(sunMesh);
 
 // Grass ground — flat clearing for the casino, rolling hills beyond
-const texLoader = new THREE.TextureLoader();
-const grassTex = texLoader.load('textures/grass.jpg');
-grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping; grassTex.repeat.set(44,44); grassTex.anisotropy = 8;
 function terrainH(x,z){ const r=Math.hypot(x,z); const amp=Math.min(1,Math.max(0,(r-16)/16))*2.6;
   return (Math.sin(x*0.16)*Math.cos(z*0.13)+Math.sin(x*0.07+z*0.10)*0.8+Math.sin(z*0.21)*0.5)*amp; }
 const groundGeo = new THREE.PlaneGeometry(190,190,170,170);
 { const pos=groundGeo.attributes.position; for(let i=0;i<pos.count;i++){ pos.setZ(i, terrainH(pos.getX(i), pos.getY(i))); } groundGeo.computeVertexNormals(); }
-const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map:grassTex, roughness:1, metalness:0 }));
+const groundMat = new THREE.MeshStandardMaterial({ color:0x5a8a45, roughness:0.9, metalness:0.05, emissive:0x1a3a0a, emissiveIntensity:0.15 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+// load texture after ground exists so black-on-fail never shows
+new THREE.TextureLoader().load('textures/grass.jpg', tex=>{
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(44,44); tex.anisotropy=8;
+  groundMat.map=tex; groundMat.needsUpdate=true;
+});
 
 // ---------- Interactables ----------
 const interactables = []; // {mesh, onTap, hover()}
@@ -278,31 +283,29 @@ function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo
 // req = prerequisite {key, lv} that must be reached before this unlocks.
 const upgradeDefs = [
   // Tier 0 — always available
-  { key:'luckLv',    name:'LUCK',     icon:'🍀', color:'#39ff14', base:50,  grow:1.5,  start:1, gx:0,gy:0, desc:()=>'Win chance +4%' },
-  { key:'payLv',     name:'PAYOUT',   icon:'💰', color:'#ffe347', base:75,  grow:1.55, start:1, gx:1,gy:0, desc:()=>'Payouts +35%' },
+  { key:'luckLv',    name:'LUCK',     icon:'🍀', color:'#39ff14', base:50,  grow:1.5,  start:1, gx:0,gy:0, desc:()=>'Win chance +2%' },
+  { key:'payLv',     name:'PAYOUT',   icon:'💰', color:'#ffe347', base:75,  grow:1.55, start:1, gx:1,gy:0, desc:()=>'Payouts +15%' },
   { key:'autoLv',    name:'AUTO',     icon:'⚙️', color:'#ff8a3d', base:200, grow:1.8,  start:0, gx:2,gy:0, desc:()=>'+1 token/sec' },
   // Tier 1
-  { key:'critLv',    name:'CRIT',     icon:'💥', color:'#ff2e97', base:120, grow:1.7,  start:0, gx:0,gy:1, req:{key:'luckLv',lv:3}, desc:()=>'+3% to crit a win' },
-  { key:'slotLuckLv',name:'SLOT ODDS',icon:'🎰', color:'#00eaff', base:90,  grow:1.6,  start:1, gx:1,gy:1, req:{key:'payLv',lv:3}, desc:()=>'Better slot symbols' },
-  { key:'plinkoLv',  name:'PLINKO',   icon:'🔵', color:'#b46bff', base:90,  grow:1.6,  start:1, gx:2,gy:1, req:{key:'autoLv',lv:1}, desc:()=>'Higher plinko slots' },
+  { key:'critLv',    name:'CRIT',     icon:'💥', color:'#ff2e97', base:120, grow:1.7,  start:0, gx:0,gy:1, req:{key:'luckLv',lv:3}, desc:()=>'+1.5% crit chance' },
+  { key:'plinkoExpandLv',name:'EXPAND',icon:'📈', color:'#5dd6ff', base:100, grow:1.7, start:0, gx:1,gy:1, req:{key:'payLv',lv:2}, desc:()=>'Add 3 slots to plinko' },
+  { key:'plinkoLv',  name:'BOOST',   icon:'⬆️', color:'#b46bff', base:90,  grow:1.6,  start:1, gx:2,gy:1, req:{key:'autoLv',lv:1}, desc:()=>'Better ball luck' },
   // Tier 2
-  { key:'wheelLv',   name:'WHEEL',    icon:'🎡', color:'#ffd34d', base:140, grow:1.65, start:0, gx:0,gy:2, req:{key:'critLv',lv:2}, desc:()=>'Better wheel odds' },
-  { key:'diceLv',    name:'DICE',     icon:'🎲', color:'#5dd6ff', base:140, grow:1.65, start:0, gx:1,gy:2, req:{key:'slotLuckLv',lv:2}, desc:()=>'+2.5% dice odds' },
-  { key:'scratchLv', name:'SCRATCH',  icon:'🎟️', color:'#39ff14', base:140, grow:1.65, start:0, gx:2,gy:2, req:{key:'plinkoLv',lv:2}, desc:()=>'Better scratch luck' },
+  { key:'megaExpandLv',name:'MEGA',   icon:'🚀', color:'#ff5db1', base:250, grow:1.75, start:0, gx:0,gy:2, req:{key:'plinkoExpandLv',lv:3}, desc:()=>'Expand +6 slots' },
+  { key:'megaCritLv',name:'MEGACRIT', icon:'⚡', color:'#ff2e97', base:400, grow:1.9,  start:0, gx:1,gy:2, req:{key:'critLv',lv:5}, desc:()=>'+1.5x crit mult' },
+  { key:'fortuneLv', name:'FORTUNE',  icon:'🌟', color:'#ffe347', base:400, grow:1.9,  start:0, gx:2,gy:2, req:{key:'payLv',lv:6}, desc:()=>'+4% payouts' },
   // Tier 3 — endgame
-  { key:'megaCritLv',name:'MEGACRIT', icon:'⚡', color:'#ff2e97', base:400, grow:1.9,  start:0, gx:0,gy:3, req:{key:'critLv',lv:5}, desc:()=>'+2x crit multiplier' },
-  { key:'fortuneLv', name:'FORTUNE',  icon:'🌟', color:'#ffe347', base:400, grow:1.9,  start:0, gx:1,gy:3, req:{key:'payLv',lv:6}, desc:()=>'+8% to ALL payouts' },
-  { key:'interestLv',name:'INTEREST', icon:'🏦', color:'#ff8a3d', base:500, grow:2.0,  start:0, gx:2,gy:3, req:{key:'autoLv',lv:3}, desc:()=>'+0.2%/s of your bank' },
+  { key:'interestLv',name:'INTEREST', icon:'🏦', color:'#ff8a3d', base:500, grow:2.0,  start:0, gx:3,gy:2, req:{key:'autoLv',lv:3}, desc:()=>'+0.2%/s of your bank' },
   // Tier 4 — prestige
-  { key:'overLv',    name:'OVERDRIVE',icon:'🚀', color:'#ff2e97', base:2500, grow:2.15, start:0, gx:0,gy:4, req:{key:'megaCritLv',lv:3}, desc:()=>'+15% to all payouts' },
-  { key:'cloverLv',  name:'4-LEAF',   icon:'☘️', color:'#39ff14', base:2500, grow:2.15, start:0, gx:1,gy:4, req:{key:'fortuneLv',lv:3}, desc:()=>'+8% luck' },
-  { key:'vaultLv',   name:'VAULT',    icon:'🏰', color:'#ffcf6a', base:4000, grow:2.25, start:0, gx:2,gy:4, req:{key:'interestLv',lv:3}, desc:()=>'+0.3%/s interest' },
+  { key:'overLv',    name:'OVERDRIVE',icon:'🚀', color:'#ff2e97', base:2500, grow:2.15, start:0, gx:0,gy:3, req:{key:'megaCritLv',lv:3}, desc:()=>'+8% payouts' },
+  { key:'cloverLv',  name:'4-LEAF',   icon:'☘️', color:'#39ff14', base:2500, grow:2.15, start:0, gx:1,gy:3, req:{key:'fortuneLv',lv:3}, desc:()=>'+4% luck' },
+  { key:'vaultLv',   name:'VAULT',    icon:'🏰', color:'#ffcf6a', base:4000, grow:2.25, start:0, gx:2,gy:3, req:{key:'interestLv',lv:3}, desc:()=>'+0.3%/s interest' },
   // Tier 5 — cosmic
-  { key:'cosmicLv',  name:'COSMIC',   icon:'🌌', color:'#9b5dff', base:25000, grow:2.5, start:0, gx:0,gy:5, req:{key:'overLv',lv:3}, desc:()=>'+20% all payouts' },
-  { key:'omniLv',    name:'OMNILUCK', icon:'♾️', color:'#39ff14', base:25000, grow:2.5, start:0, gx:1,gy:5, req:{key:'cloverLv',lv:3}, desc:()=>'+15% luck' },
-  { key:'eternityLv',name:'ETERNITY', icon:'⏳', color:'#5dd6ff', base:35000, grow:2.6, start:0, gx:2,gy:5, req:{key:'vaultLv',lv:3}, desc:()=>'+1%/s interest' },
-  { key:'infinityLv',name:'INFINITY', icon:'∞', color:'#ff2e97', base:50000, grow:2.75, start:0, gx:3,gy:5, req:{key:'megaCritLv',lv:5}, desc:()=>'+5x crit mult' },
-  { key:'apotheosisLv',name:'APOTHEOSIS',icon:'👑', color:'#ffcf6a', base:75000, grow:3.0, start:0, gx:4,gy:5, req:{key:'fortuneLv',lv:5}, desc:()=>'+50% everything' },
+  { key:'cosmicLv',  name:'COSMIC',   icon:'🌌', color:'#9b5dff', base:25000, grow:2.5, start:0, gx:0,gy:4, req:{key:'overLv',lv:3}, desc:()=>'+10% payouts' },
+  { key:'omniLv',    name:'OMNILUCK', icon:'♾️', color:'#39ff14', base:25000, grow:2.5, start:0, gx:1,gy:4, req:{key:'cloverLv',lv:3}, desc:()=>'+8% luck' },
+  { key:'eternityLv',name:'ETERNITY', icon:'⏳', color:'#5dd6ff', base:35000, grow:2.6, start:0, gx:2,gy:4, req:{key:'vaultLv',lv:3}, desc:()=>'+1%/s interest' },
+  { key:'infinityLv',name:'INFINITY', icon:'∞', color:'#ff2e97', base:50000, grow:2.75, start:0, gx:3,gy:4, req:{key:'megaCritLv',lv:5}, desc:()=>'+2.5x crit mult' },
+  { key:'apotheosisLv',name:'APOTHEOSIS',icon:'👑', color:'#ffcf6a', base:75000, grow:3.0, start:0, gx:4,gy:4, req:{key:'fortuneLv',lv:5}, desc:()=>'+25% everything' },
 ];
 const upgradeByKey = Object.fromEntries(upgradeDefs.map(d=>[d.key,d]));
 function upCost(def){ const lv=S[def.key]||0; return Math.floor(def.base*Math.pow(def.grow, lv-(def.start||0))); }
@@ -321,20 +324,20 @@ function colorHex(s){ return new THREE.Color(s); }
 upgradeDefs.forEach(def=>{ if(!def.req) return;
   const a=nodePos(upgradeByKey[def.req.key]), b=nodePos(def);
   const dx=b.x-a.x, dz=b.z-a.z, len=Math.hypot(dx,dz);
-  const mat=new THREE.MeshStandardMaterial({color:0x2a2f55, emissive:0x000000});
+  const mat=new THREE.MeshStandardMaterial({color:0x3a3f65, emissive:0x000000, metalness:0.3});
   const bar=new THREE.Mesh(new THREE.BoxGeometry(len,0.06,0.16), mat);
   bar.position.set((a.x+b.x)/2, 0.06, (a.z+b.z)/2); bar.rotation.y=Math.atan2(-dz,dx);
   treeGroup.add(bar); branches.push({bar,def,baseColor:def.color});
 });
-function refreshConnectors(){ branches.forEach(o=>{ const on=isUnlocked(o.def); o.bar.material.color.set(on?o.baseColor:'#1c2038'); o.bar.material.emissive.set(on?o.baseColor:'#000000'); o.bar.material.emissiveIntensity=on?0.35:0; }); }
+function refreshConnectors(){ branches.forEach(o=>{ const on=isUnlocked(o.def); o.bar.material.color.set(on?o.baseColor:'#1c2038'); o.bar.material.emissive.set(on?o.baseColor:'#000000'); o.bar.material.emissiveIntensity=on?0.5:0; }); }
 
 // each node = a pedestal box on the floor + a sign (tap to buy) facing the player
 const upBlocks=[];
 upgradeDefs.forEach((def)=>{
   const p=nodePos(def);
-  const ped=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.5,1.0), new THREE.MeshStandardMaterial({color:0x14182e, metalness:0.5, roughness:0.5}));
+  const ped=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.5,1.0), new THREE.MeshStandardMaterial({color:0x1a1f3a, metalness:0.6, roughness:0.3, emissive:0x0a0a1a, emissiveIntensity:0.2}));
   ped.position.set(p.x,0.25,p.z); ped.castShadow=true; treeGroup.add(ped);
-  const cap=new THREE.Mesh(new THREE.BoxGeometry(1.04,0.06,1.04), new THREE.MeshStandardMaterial({color:def.color, emissive:def.color, emissiveIntensity:0.5}));
+  const cap=new THREE.Mesh(new THREE.BoxGeometry(1.04,0.06,1.04), new THREE.MeshStandardMaterial({color:def.color, emissive:def.color, emissiveIntensity:0.7, metalness:0.4}));
   cap.position.set(p.x,0.53,p.z); treeGroup.add(cap); def._cap=cap;
   const sign=makePanel(1.3,1.0, drawUpgrade(def));
   sign.position.set(p.x,1.35,p.z); sign.rotation.y=Math.PI;
@@ -377,13 +380,10 @@ function buyUpgrade(def, block){
   } else { log(`Not enough tokens for ${def.name}`); pulse(block,0xff3b5b); sfxLose(); }
   refreshUpgrades();
 }
-function refreshUpgrades(){ upBlocks.forEach(b=>b.userData.redraw()); refreshConnectors(); }
+function refreshUpgrades(){ upBlocks.forEach(b=>b.userData.redraw()); refreshConnectors(); rebuildPlinko(); scoreboard.userData.redraw(); }
 refreshConnectors();
 // new gameplay multipliers from the expanded tree
 const critMult   = () => 5 + (S.megaCritLv||0)*2 + (S.infinityLv||0)*5;
-const wheelLuck  = () => 1 + (S.wheelLv||0)*0.15;
-const diceBonus  = () => (S.diceLv||0)*0.025;
-const scratchLuck= () => 1 + (S.scratchLv||0)*0.25;
 
 // ==================================================================
 // BET SIZING — raise/lower a global bet multiplier (cost & payout scale)
@@ -440,227 +440,79 @@ statsPanel.visible=false; muteBtn.visible=false;
 const _updateHUD = updateHUD;
 updateHUD = function(){ _updateHUD(); refreshStats(); };
 
-// ==================================================================
-// SLOT MACHINE
-// ==================================================================
-const SYMS = ['🍒','🍋','🔔','⭐','💎','7️⃣'];
-const SYM_PAY = { '🍒':3,'🍋':5,'🔔':10,'⭐':20,'💎':50,'7️⃣':100 };
-const slotGroup = new THREE.Group(); slotGroup.position.set(0,0,-9); scene.add(slotGroup);
-const slotCab = new THREE.Mesh(new THREE.BoxGeometry(2.6,3.4,1), new THREE.MeshStandardMaterial({color:0x2a1140, metalness:0.4, roughness:0.4}));
-slotCab.position.y=1.7; slotGroup.add(slotCab);
-let slotReels = ['🍒','🍋','🔔'];
-let slotSpinning=false;
-const slotScreen = makePanel(2.2,1.1,(c,w,h)=>{
-  c.fillStyle='#000'; c.fillRect(0,0,w,h);
-  c.textAlign='center'; c.textBaseline='middle'; c.font='110px serif';
-  for(let i=0;i<3;i++){ c.fillText(slotReels[i], w*(i+0.5)/3, h/2); }
-});
-slotScreen.position.set(0,2.2,0.52); slotGroup.add(slotScreen);
-const slotBtn = makePanel(1.6,0.55,(c,w,h)=>{ c.fillStyle='#ff5db1'; roundRect(c,0,0,w,h,30); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('SPIN 🪙'+fmt(10*bet()), w/2,h/2); }); betLabels.push(slotBtn);
-slotBtn.position.set(0,1.1,0.52); slotGroup.add(slotBtn);
-const slotLabel = makePanel(2.4,0.45,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#5dd6ff'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎰 SLOTS', w/2,h/2); });
-slotLabel.position.set(0,3.55,0.52); slotGroup.add(slotLabel);
-registerInteractable(slotBtn, spinSlots);
-function weightedSym(){
-  // higher slotLuck biases toward valuable symbols
-  const luck=S.slotLuckLv;
-  const r=Math.random()*100;
-  const top = 5 + luck*1.2; // chance for 7 or diamond
-  if(r < top*0.4) return '7️⃣';
-  if(r < top) return '💎';
-  if(r < top+12) return '⭐';
-  if(r < top+28) return '🔔';
-  if(r < 60) return '🍋';
-  return '🍒';
-}
-function spinSlots(){
-  if(slotSpinning) return;
-  const cost=10*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' to spin'); return; }
-  addTokens(-cost); save(); slotSpinning=true;
-  let ticks=0; const final=[weightedSym(),weightedSym(),weightedSym()];
-  const iv=setInterval(()=>{
-    ticks++;
-    for(let i=0;i<3;i++){ if(ticks < 10+i*6) slotReels[i]=SYMS[(Math.random()*SYMS.length)|0]; else slotReels[i]=final[i]; }
-    slotScreen.userData.redraw();
-    if(ticks>=22){ clearInterval(iv); slotSpinning=false; resolveSlots(final); }
-  },60);
-}
-function resolveSlots(r){
-  let win=0;
-  if(r[0]===r[1]&&r[1]===r[2]) win = SYM_PAY[r[0]]*10;
-  else if(r[0]===r[1]||r[1]===r[2]||r[0]===r[2]){ const s = r[0]===r[1]?r[0]:(r[1]===r[2]?r[1]:r[0]); win = SYM_PAY[s]; }
-  win = Math.floor(win*payMul()*bet());
-  if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
-  if(win>0){ addTokens(win); log(`🎰 ${r.join(' ')} → +${fmt(win)}`); pulse(slotScreen,0xffd34d); reportWin(win,'Slots'); }
-  else log(`🎰 ${r.join(' ')} → no win`);
-  save(); refreshUpgrades();
-}
 
 // ==================================================================
 // PLINKO
 // ==================================================================
-const plinkoGroup = new THREE.Group(); plinkoGroup.position.set(4.5,0,-8); plinkoGroup.rotation.y=-0.5; scene.add(plinkoGroup);
-const pBoard = new THREE.Mesh(new THREE.BoxGeometry(3,4,0.3), new THREE.MeshStandardMaterial({color:0x14163a, metalness:0.3, roughness:0.6}));
+const plinkoGroup = new THREE.Group(); plinkoGroup.position.set(4.5,0.5,-8); plinkoGroup.rotation.y=-0.5; scene.add(plinkoGroup);
+const pBoard = new THREE.Mesh(new THREE.BoxGeometry(3,4,0.3), new THREE.MeshStandardMaterial({color:0x1a1f4a, metalness:0.4, roughness:0.4, emissive:0x0a0a1a, emissiveIntensity:0.2}));
 pBoard.position.y=2.2; plinkoGroup.add(pBoard);
-// pegs
-const pegRows=7, pegMat=new THREE.MeshStandardMaterial({color:0x9b5dff,emissive:0x3a1a6a});
-for(let row=0;row<pegRows;row++){ const n=row+2; for(let i=0;i<n;i++){ const peg=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),pegMat); peg.position.set((i-(n-1)/2)*0.36, 3.4-row*0.38, 0.18); plinkoGroup.add(peg);} }
-// slot multipliers at bottom
-const PLINKO_MULT = [0.2,0.5,1,2,5,2,1,0.5,0.2];
-const plabels=[];
-for(let i=0;i<PLINKO_MULT.length;i++){
-  const m=PLINKO_MULT[i];
-  const lab=makePanel(0.34,0.4,(c,w,h)=>{ c.fillStyle = m>=2?'#ffd34d':(m>=1?'#5dd6ff':'#3a3f66'); roundRect(c,2,2,w-4,h-4,8); c.fill(); c.fillStyle='#0a0c1a'; c.font='bold 44px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(m+'x',w/2,h/2); });
-  lab.position.set((i-(PLINKO_MULT.length-1)/2)*0.36, 0.45, 0.2); plinkoGroup.add(lab); plabels.push(lab);
+// dynamic plinko multipliers based on expansion level
+function getPlinkoMults(){
+  const expand=(S.plinkoExpandLv||0) + (S.megaExpandLv||0)*2; // megaExpand = +2 plinkoExpand
+  const badOdds=8+expand; const mult=Math.round(2*badOdds/5);
+  const mults=[]; for(let i=0;i<4;i++) mults.push(mult); for(let i=0;i<badOdds;i++) mults.push(-mult); for(let i=0;i<4;i++) mults.push(mult); return mults;
 }
-const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙'+fmt(20*bet()),w/2,h/2); }); betLabels.push(dropBtn);
-dropBtn.position.set(0,0,0.2); plinkoGroup.add(dropBtn);
-registerInteractable(dropBtn, dropPlinko);
+const plabels=[], pPegs=[];
+const pegMat=new THREE.MeshStandardMaterial({color:0xb875ff,emissive:0x5a3a8a, emissiveIntensity:0.4, metalness:0.3});
+function rebuildPlinko(){
+  plabels.forEach(l=>plinkoGroup.remove(l)); plabels.length=0;
+  pPegs.forEach(p=>plinkoGroup.remove(p)); pPegs.length=0;
+  const mults=getPlinkoMults();
+  const slotW=0.34, slotH=0.4, spacing=0.36;
+  for(let i=0;i<mults.length;i++){
+    const m=mults[i];
+    const lab=makePanel(slotW,slotH,(c,w,h)=>{ const col = m>0?'#ffd34d':(m<0?'#ff5566':'#3a3f66'); c.fillStyle=col; roundRect(c,2,2,w-4,h-4,8); c.fill(); c.fillStyle='#0a0c1a'; c.font='bold 40px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText((m>0?'+':'')+m+'x',w/2,h/2); });
+    lab.position.set((i-(mults.length-1)/2)*spacing, 0.45, 0.2); plinkoGroup.add(lab); plabels.push(lab);
+  }
+  // pegs scale with board width
+  const pegRows=7; const pegW=mults.length*spacing;
+  for(let row=0;row<pegRows;row++){ const n=Math.max(2,Math.round((row+2)*(pegW/6))); for(let i=0;i<n;i++){ const peg=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,8),pegMat); peg.position.set((i-(n-1)/2)*0.36, 3.4-row*0.38, 0.18); plinkoGroup.add(peg); pPegs.push(peg); } }
+  // scale board
+  pBoard.scale.x = Math.max(1, pegW/3);
+}
+// scoreboard (vertical panel)
+const scoreboardW=0.8, scoreboardH=3;
+const scoreboard=makePanel(scoreboardW,scoreboardH,(c,w,h)=>{
+  c.fillStyle='#0a0c1a'; c.fillRect(0,0,w,h);
+  const mults=getPlinkoMults();
+  const rows=Math.min(12,mults.length), fontSize=Math.floor(h/(rows+1));
+  c.fillStyle='#9b5dff'; c.font='bold '+(fontSize+4)+'px Segoe UI'; c.textAlign='left'; c.textBaseline='top'; c.fillText('ODDS',8,8);
+  for(let i=0;i<rows;i++){ const m=mults[i]; const y=8+(i+1.2)*fontSize; c.fillStyle=m>0?'#ffd34d':(m<0?'#ff5566':'#3a3f66'); c.font=(fontSize-4)+'px monospace'; c.fillText((m>0?'+':'')+m+'x',16,y); }
+  if(mults.length>rows){ c.fillStyle='#6b7396'; c.font=(fontSize-4)+'px monospace'; c.fillText('+'+(mults.length-rows)+' more',16,8+(rows+1.2)*fontSize); }
+});
+scoreboard.position.set(-4.5, 2, -8); plinkoGroup.add(scoreboard);
 const pLabel = makePanel(2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#9b5dff'; c.font='bold 58px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🔵 PLINKO',w/2,h/2); });
-pLabel.position.set(0,4.4,0.2); plinkoGroup.add(pLabel);
+pLabel.position.set(0,4.8,0.2); plinkoGroup.add(pLabel);
+const dropBtn = makePanel(1.6,0.5,(c,w,h)=>{ c.fillStyle='#9b5dff'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#fff'; c.font='bold 52px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('DROP 🪙'+fmt(20*bet()),w/2,h/2); }); betLabels.push(dropBtn);
+dropBtn.position.set(0,-0.2,0.2); plinkoGroup.add(dropBtn);
+registerInteractable(dropBtn, dropPlinko);
 const balls=[];
 function dropPlinko(){
   { const cost=20*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' for plinko'); return; }
   addTokens(-cost); save(); }
-  const ball=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,12), new THREE.MeshStandardMaterial({color:0xffd34d, emissive:0x665010}));
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,12), new THREE.MeshStandardMaterial({color:0xffd34d, emissive:0x8a7030, emissiveIntensity:0.5, metalness:0.7}));
   ball.position.set((Math.random()-0.5)*0.2, 3.9, 0.25);
-  // luck biases drift toward center high slots
-  ball.userData.vx=(Math.random()-0.5)*0.02; ball.userData.vy=0; ball.userData.bias=(Math.random()-0.5)*0.004*(1+(S.plinkoLv-1)*0.3);
+  ball.userData.vx=(Math.random()-0.5)*0.02; ball.userData.vy=0; ball.userData.bias=(Math.random()-0.5)*0.004*(1+(S.plinkoLv-1)*0.15);
   plinkoGroup.add(ball); balls.push(ball);
 }
 function stepBalls(dt){
   for(let i=balls.length-1;i>=0;i--){ const b=balls[i];
-    b.userData.vy -= 1.8*dt; b.position.y += b.userData.vy*dt;
-    b.position.x += b.userData.vx + b.userData.bias;
-    // bounce against pegs region randomness
-    if(b.position.y < 3.4 && b.position.y>0.6 && Math.random()<0.3){ b.userData.vx += (Math.random()-0.5)*0.04; }
-    b.userData.vx*=0.96;
-    if(b.position.x<-1.45){b.position.x=-1.45;b.userData.vx*=-0.5;} if(b.position.x>1.45){b.position.x=1.45;b.userData.vx*=-0.5;}
+    b.userData.vy -= 1.8*dt; b.position.y += b.userData.vy*dt; b.position.x += b.userData.vx + b.userData.bias; b.userData.vx*=0.96;
+    const mults=getPlinkoMults(); const halfW=mults.length*0.36/2;
+    if(b.position.x<-halfW){b.position.x=-halfW;b.userData.vx*=-0.5;} if(b.position.x>halfW){b.position.x=halfW;b.userData.vx*=-0.5;}
     if(b.position.y<=0.5){
-      let idx=Math.round(b.position.x/0.36 + (PLINKO_MULT.length-1)/2); idx=Math.max(0,Math.min(PLINKO_MULT.length-1,idx));
-      let win=Math.floor(20*PLINKO_MULT[idx]*payMul()*bet());
+      let idx=Math.round(b.position.x/0.36 + (mults.length-1)/2); idx=Math.max(0,Math.min(mults.length-1,idx));
+      let win=Math.floor(20*mults[idx]*payMul()*bet());
       if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
-      addTokens(win); log(`🔵 Plinko ${PLINKO_MULT[idx]}x → +${fmt(win)}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko');
+      if(win>0){ addTokens(win); log(`🔵 Plinko ${mults[idx]}x → +${fmt(win)}`); pulse(plabels[idx],0xffd34d); reportWin(win,'Plinko'); }
+      else { addTokens(win); log(`🔵 Plinko ${mults[idx]}x → Lost ${fmt(Math.abs(win))}`); pulse(plabels[idx],0xff5566); }
       plinkoGroup.remove(b); balls.splice(i,1); save(); refreshUpgrades();
     }
   }
 }
+rebuildPlinko();
 
-// ==================================================================
-// SCRATCH TICKET
-// ==================================================================
-const scratchGroup=new THREE.Group(); scratchGroup.position.set(-4.5,0,-8); scratchGroup.rotation.y=0.5; scene.add(scratchGroup);
-const sStand=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.2,1),new THREE.MeshStandardMaterial({color:0x222}));
-let scratchState=null; // {cells:[], revealed:[], prize}
-const scratchPanel=makePanel(2.2,1.6,drawScratch);
-scratchPanel.position.set(0,2,0); scratchGroup.add(scratchPanel);
-const sLabel=makePanel(2.4,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#3ddc84'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎟️ SCRATCHERS',w/2,h/2); });
-sLabel.position.set(0,3.1,0); scratchGroup.add(sLabel);
-const buyTicket=makePanel(2,0.5,(c,w,h)=>{ c.fillStyle='#3ddc84'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#06210f'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('TICKET 🪙'+fmt(25*bet()),w/2,h/2); }); betLabels.push(buyTicket);
-buyTicket.position.set(0,1.0,0); scratchGroup.add(buyTicket);
-registerInteractable(buyTicket, newTicket);
-registerInteractable(scratchPanel, (hit)=>scratchAt(hit));
-function newTicket(){
-  { const cost=25*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' for a ticket'); return; }
-  addTokens(-cost); save(); }
-  // clean prize values shown on each cell; match 3 of a value to win it
-  const prizes=[0,0,0,10,10,25,25,50,100,250];
-  const cells=[]; for(let i=0;i<9;i++){ cells.push(prizes[(Math.random()*prizes.length)|0]); }
-  // luck: small chance to seed a jackpot triple
-  if(Math.random()<0.04*luckBonus()*scratchLuck()){ cells[0]=cells[4]=cells[8]=500; }
-  scratchState={cells, revealed:Array(9).fill(false), done:false};
-  scratchPanel.userData.redraw(); log('🎟️ New ticket! Scratch all 9.');
-}
-function scratchAt(hit){
-  if(!scratchState||scratchState.done){ return; }
-  if(!hit||!hit.uv){ // reveal one unrevealed if no uv (desktop)
-    const idx=scratchState.revealed.indexOf(false); if(idx>=0) scratchState.revealed[idx]=true;
-  } else {
-    const col=Math.min(2,Math.floor(hit.uv.x*3)); const row=Math.min(2,Math.floor((1-hit.uv.y)*3)); const idx=row*3+col;
-    scratchState.revealed[idx]=true;
-  }
-  scratchPanel.userData.redraw();
-  if(scratchState.revealed.every(Boolean)){
-    scratchState.done=true;
-    // win = match 3+ of a value pays that value once per triple (no fractional consolation)
-    const counts={}; scratchState.cells.forEach(v=>counts[v]=(counts[v]||0)+1);
-    let base=0; for(const v in counts){ if(+v>0) base += (+v) * Math.floor(counts[v]/3); }
-    // apply payout multiplier once, then crit, rounded to a clean number
-    let win = Math.round(base * payMul() * bet() / 5) * 5;
-    if(win>0 && Math.random()<critChance()){ win*=critMult(); log('💥 CRIT!'); }
-    if(win>0){ addTokens(win); log(`🎟️ Ticket → +${fmt(win)}`); pulse(scratchPanel,0x3ddc84); reportWin(win,'Scratcher'); }
-    else log('🎟️ No match — better luck next ticket.');
-    save(); refreshUpgrades();
-  }
-}
-function drawScratch(ctx,w,h){
-  ctx.fillStyle='#1a1330'; ctx.fillRect(0,0,w,h);
-  if(!scratchState){ ctx.fillStyle='#9aa3c0'; ctx.font='bold 40px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('Buy a ticket below', w/2,h/2); return; }
-  for(let i=0;i<9;i++){ const col=i%3,row=(i/3)|0; const cw=w/3, ch=h/3, x=col*cw, y=row*ch;
-    if(scratchState.revealed[i]){ ctx.fillStyle='#0c0e1a'; ctx.fillRect(x+6,y+6,cw-12,ch-12);
-      const v=scratchState.cells[i]; ctx.fillStyle = v>0?'#ffd34d':'#5a6080'; ctx.font='bold 56px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(v>0?('🪙'+v):'✖', x+cw/2, y+ch/2);
-    } else { ctx.fillStyle='#7a7f9c'; roundRect(ctx,x+6,y+6,cw-12,ch-12,10); ctx.fill(); ctx.fillStyle='#555a78'; ctx.font='40px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('?', x+cw/2,y+ch/2); }
-  }
-}
-
-// ==================================================================
-// ROULETTE / SPIN WHEEL (more gambling!)
-// ==================================================================
-const wheelGroup=new THREE.Group(); wheelGroup.position.set(7,0,-3); wheelGroup.rotation.y=-1.0; scene.add(wheelGroup);
-const WHEEL_SEGMENTS=[0,2,0,3,0,5,0,2,0,10,0,3,0,2,0,50];
-const wheelDisc=makePanel(2.4,2.4,(c,w,h)=>{
-  const n=WHEEL_SEGMENTS.length, cx=w/2,cy=h/2,R=w/2-8;
-  for(let i=0;i<n;i++){ const a0=i/n*Math.PI*2, a1=(i+1)/n*Math.PI*2; c.beginPath(); c.moveTo(cx,cy); c.arc(cx,cy,R,a0,a1); c.closePath();
-    const m=WHEEL_SEGMENTS[i]; c.fillStyle = m===0?'#1a1330':(m>=10?'#ffd34d':(m>=3?'#ff5db1':'#5dd6ff')); c.fill(); c.strokeStyle='#05060a'; c.lineWidth=3; c.stroke();
-    c.save(); c.translate(cx,cy); c.rotate((a0+a1)/2); c.fillStyle = m===0?'#555':'#0a0c1a'; c.font='bold 34px Segoe UI'; c.textAlign='right'; c.textBaseline='middle'; c.fillText(m===0?'✖':(m+'x'), R-14, 0); c.restore();
-  }
-});
-wheelDisc.position.set(0,2.4,0); wheelGroup.add(wheelDisc);
-const wheelBtn=makePanel(1.8,0.5,(c,w,h)=>{ c.fillStyle='#ffd34d'; roundRect(c,0,0,w,h,28); c.fill(); c.fillStyle='#1a0b2e'; c.font='bold 50px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('WHEEL 🪙'+fmt(30*bet()),w/2,h/2); }); betLabels.push(wheelBtn);
-wheelBtn.position.set(0,0.9,0.1); wheelGroup.add(wheelBtn);
-const wLabel=makePanel(2.2,0.4,(c,w,h)=>{ c.clearRect(0,0,w,h); c.fillStyle='#ffd34d'; c.font='bold 56px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('🎡 WHEEL',w/2,h/2); });
-wLabel.position.set(0,3.85,0); wheelGroup.add(wLabel);
-// pointer
-const ptr=new THREE.Mesh(new THREE.ConeGeometry(0.1,0.25,3), new THREE.MeshStandardMaterial({color:0xffffff})); ptr.position.set(0,3.65,0.05); ptr.rotation.z=Math.PI; wheelGroup.add(ptr);
-registerInteractable(wheelBtn, spinWheel);
-let wheelSpin=null;
-function spinWheel(){
-  if(wheelSpin){ return; } { const cost=30*bet(); if(S.tokens<cost){ log('Need 🪙'+fmt(cost)+' for wheel'); return; }
-  addTokens(-cost); save(); }
-  const n=WHEEL_SEGMENTS.length;
-  // luck biases landing on higher segments
-  let target=(Math.random()*n)|0; if(Math.random()<0.15*luckBonus()*wheelLuck()){ // re-roll toward a winner
-    for(let k=0;k<n;k++){ if(WHEEL_SEGMENTS[(target)%n]>0) break; target=(target+1)%n; } }
-  const targetAngle = -(target+0.5)/n*Math.PI*2;
-  wheelSpin={ t:0, dur:3+Math.random(), from:wheelDisc.rotation.z, to: wheelDisc.rotation.z - Math.PI*8 + targetAngle, seg:target };
-}
-function stepWheel(dt){
-  if(!wheelSpin) return; wheelSpin.t+=dt; const p=Math.min(1,wheelSpin.t/wheelSpin.dur); const e=1-Math.pow(1-p,3);
-  wheelDisc.rotation.z = wheelSpin.from+(wheelSpin.to-wheelSpin.from)*e;
-  if(p>=1){ const m=WHEEL_SEGMENTS[wheelSpin.seg]; let win=Math.floor(30*m*payMul()*bet()); if(win>0&&Math.random()<critChance()){win*=critMult();log('💥 CRIT!');}
-    if(win>0){ addTokens(win); log(`🎡 ${m}x → +${fmt(win)}`); pulse(wheelDisc,0xffd34d); reportWin(win,'Wheel');} else log('🎡 Lost the spin');
-    wheelSpin=null; save(); refreshUpgrades(); }
-}
-
-// ==================================================================
-// COIN FLIP / HIGH-LOW DICE (even more gambling)
-// ==================================================================
-const diceGroup=new THREE.Group(); diceGroup.position.set(-7,0,-1); diceGroup.rotation.y=1.1; scene.add(diceGroup);
-const dLabel=makePanel(2,0.4,(c,w,h)=>{c.clearRect(0,0,w,h);c.fillStyle='#ff9b3d';c.font='bold 54px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('🎲 DOUBLE',w/2,h/2);});
-dLabel.position.set(0,2.7,0); diceGroup.add(dLabel);
-let dicePot=0;
-const diceDisp=makePanel(2,0.9,(c,w,h)=>{ c.fillStyle='#1a1330'; roundRect(c,0,0,w,h,20); c.fill(); c.fillStyle='#ffd34d'; c.font='bold 60px Segoe UI'; c.textAlign='center'; c.textBaseline='middle'; c.fillText('Pot: 🪙'+fmt(dicePot), w/2,h/2); });
-diceDisp.position.set(0,2,0); diceGroup.add(diceDisp);
-const betBtn=makePanel(0.95,0.5,(c,w,h)=>{c.fillStyle='#5dd6ff';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#06210f';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('BET 🪙'+fmt(25*bet()),w/2,h/2);}); betLabels.push(betBtn);
-betBtn.position.set(-0.52,1.2,0); diceGroup.add(betBtn);
-const flipBtn=makePanel(0.95,0.5,(c,w,h)=>{c.fillStyle='#ff5db1';roundRect(c,0,0,w,h,24);c.fill();c.fillStyle='#1a0b2e';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('DOUBLE',w/2,h/2);});
-flipBtn.position.set(0.52,1.2,0); diceGroup.add(flipBtn);
-const cashBtn=makePanel(2,0.4,(c,w,h)=>{c.fillStyle='#3ddc84';roundRect(c,0,0,w,h,20);c.fill();c.fillStyle='#06210f';c.font='bold 40px Segoe UI';c.textAlign='center';c.textBaseline='middle';c.fillText('CASH OUT',w/2,h/2);});
-cashBtn.position.set(0,0.65,0); diceGroup.add(cashBtn);
-registerInteractable(betBtn, ()=>{ if(dicePot>0){log('Resolve current pot first');return;} { const cost=25*bet(); if(S.tokens<cost){log('Need 🪙'+fmt(cost));return;} addTokens(-cost); dicePot=cost; } diceDisp.userData.redraw(); log('🎲 Pot started at 🪙'+fmt(dicePot)+'. Double or cash.'); save(); });
-registerInteractable(flipBtn, ()=>{ if(dicePot<=0){log('Place a bet first');return;}
-  const winP=Math.min(0.9, 0.5*Math.min(1.3,luckBonus()) + diceBonus()); if(Math.random()<winP){ dicePot=Math.floor(dicePot*2); log('🎲 Won! Pot doubled to 🪙'+fmt(dicePot)); pulse(diceDisp,0x3ddc84);} else { log('🎲 Busted! Lost pot.'); dicePot=0; pulse(diceDisp,0xff3b5b);} diceDisp.userData.redraw(); save(); });
-registerInteractable(cashBtn, ()=>{ if(dicePot<=0){log('Nothing to cash');return;} addTokens(dicePot); log('🎲 Cashed out 🪙'+fmt(dicePot)); reportWin(dicePot,'Double-or-Nothing'); dicePot=0; diceDisp.userData.redraw(); save(); refreshUpgrades(); });
 
 // ==================================================================
 // BLACKJACK
@@ -785,11 +637,11 @@ function colorFor(id){ let h=0; for(const c of id) h=(h*31+c.charCodeAt(0))>>>0;
 
 function makeAvatar(id){
   const g=new THREE.Group(); const col=colorFor(id);
-  const mat=new THREE.MeshStandardMaterial({color:col, emissive:col, emissiveIntensity:0.3});
+  const mat=new THREE.MeshStandardMaterial({color:col, emissive:col, emissiveIntensity:0.4, metalness:0.2});
   const head=new THREE.Mesh(new THREE.BoxGeometry(0.22,0.24,0.26), mat); g.add(head);
   // visor
   const visor=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.07,0.02), new THREE.MeshStandardMaterial({color:0x05060a}));
-  visor.position.set(0,0.02,0.13); head.add(visor);
+  visor.position.set(0,0.02,0.13); visor.rotation.z=Math.PI; head.add(visor);
   const hands=[0,1].map(()=>{ const h=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.12), mat); g.add(h); return h; });
   // nametag above head
   const tagCanvas=document.createElement('canvas'); tagCanvas.width=256; tagCanvas.height=64;
@@ -987,12 +839,12 @@ function sfxEvent(){ [392,523,659,784,1047].forEach((f,i)=>tone(f,0.25,'square',
 // ==================================================================
 function buildDecor(){
   // smaller wooden patio under the central area (machines mostly sit on grass)
-  const deck=new THREE.Mesh(new THREE.CircleGeometry(7.5,56), new THREE.MeshStandardMaterial({color:0x8a6a44, roughness:0.85, metalness:0}));
+  const deck=new THREE.Mesh(new THREE.CircleGeometry(7.5,56), new THREE.MeshStandardMaterial({color:0x9a7a54, roughness:0.75, metalness:0.15, emissive:0x3a2a0a, emissiveIntensity:0.1}));
   deck.rotation.x=-Math.PI/2; deck.position.y=0.02; deck.receiveShadow=true; scene.add(deck);
-  const deckRim=new THREE.Mesh(new THREE.TorusGeometry(7.5,0.12,8,64), new THREE.MeshStandardMaterial({color:0x5a4430, roughness:0.9}));
+  const deckRim=new THREE.Mesh(new THREE.TorusGeometry(7.5,0.12,8,64), new THREE.MeshStandardMaterial({color:0x6a5440, roughness:0.8, metalness:0.1, emissive:0x2a1a0a, emissiveIntensity:0.1}));
   deckRim.rotation.x=Math.PI/2; deckRim.position.y=0.06; scene.add(deckRim);
   // wooden lamp posts around the patio with warm lights
-  const postMat=new THREE.MeshStandardMaterial({color:0x4a3826, roughness:0.85});
+  const postMat=new THREE.MeshStandardMaterial({color:0x5a4836, roughness:0.8, metalness:0.05, emissive:0x1a0a00, emissiveIntensity:0.1});
   for(let i=0;i<8;i++){ const a=i/8*Math.PI*2, R=10.6; const x=Math.cos(a)*R, z=Math.sin(a)*R;
     const post=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.14,4.2,8), postMat); post.position.set(x,2.1,z); post.castShadow=true; scene.add(post);
     const lamp=new THREE.Mesh(new THREE.SphereGeometry(0.22,12,12), new THREE.MeshStandardMaterial({color:0xfff1c0, emissive:0xffd98a, emissiveIntensity:0.9}));
@@ -1160,6 +1012,7 @@ function connectAdminBridge(){
 }
 connectAdminBridge();
 function publishAdmin(obj){ try{ if(mqttClient && mqttClient.connected) mqttClient.publish('tokencasino/'+ADMIN_CHANNEL+'/cmd', JSON.stringify(obj)); }catch(e){} }
+function publishWin(amount, game){ try{ if(mqttClient && mqttClient.connected) mqttClient.publish('tokencasino/'+ADMIN_CHANNEL+'/wins', JSON.stringify({username:S.username, game, amount, tokens:S.tokens})); }catch(e){} }
 
 // ---------- Admin mode + in-game admin panel + ban hammer ----------
 let adminMode = localStorage.getItem('casinoAdmin')==='1';
@@ -1243,7 +1096,7 @@ addEventListener('keydown',e=>{ keys[e.code]=true; if(e.code==='KeyM'){ toggleMu
 let yaw=0,pitch=0, pointerLocked=false;
 renderer.domElement.addEventListener('click', ()=>{
   if(renderer.xr.isPresenting) return;
-  if(isTouch) return; // touch devices use the touch handlers instead of pointer lock
+  if(hasTouched) return; // touch devices use the touch handlers instead of pointer lock
   if(!pointerLocked){ renderer.domElement.requestPointerLock(); return; }
   // raycast from camera center
   raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
@@ -1251,7 +1104,11 @@ renderer.domElement.addEventListener('click', ()=>{
   const hits=raycaster.intersectObjects(interactables,false);
   if(hits.length){ const h=hits[0]; if(h.object.userData.onTap){ sfxClick(); h.object.userData.onTap(h); pulse(h.object,0x5dd6ff); } }
 });
-document.addEventListener('pointerlockchange', ()=>{ pointerLocked=document.pointerLockElement===renderer.domElement; });
+document.addEventListener('pointerlockchange', ()=>{
+  pointerLocked=document.pointerLockElement===renderer.domElement;
+  if(!pointerLocked) for(const k in keys) keys[k]=false;
+});
+addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false; });
 addEventListener('mousemove', e=>{ if(!pointerLocked) return; yaw-=e.movementX*0.002; pitch-=e.movementY*0.002; pitch=Math.max(-1.4,Math.min(1.4,pitch)); });
 const mobileMove={x:0,y:0}; // from on-screen joystick (-1..1)
 function desktopControls(dt){
@@ -1273,6 +1130,7 @@ function desktopControls(dt){
 // MOBILE / TOUCH CONTROLS — left thumb = move, right drag = look, tap = interact
 // ==================================================================
 const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+let hasTouched = false; // set true on first real touch event, so desktops with touch APIs still get pointer lock
 const joyBase=document.getElementById('joyBase'), joyKnob=document.getElementById('joyKnob');
 let moveTouchId=null, joyCx=0, joyCy=0;
 let lookTouchId=null, lookLastX=0, lookLastY=0, lookMoved=0, lookStartT=0;
@@ -1280,6 +1138,7 @@ const JOY_R=55;
 function isLeftHalf(x){ return x < window.innerWidth*0.45; }
 function onTouchStart(e){
   if(renderer.xr.isPresenting) return;
+  hasTouched = true;
   audio(); // unlock sound on first touch
   for(const t of e.changedTouches){
     if(moveTouchId===null && isLeftHalf(t.clientX)){
@@ -1346,6 +1205,9 @@ function resolveCollisions(){
   const pr=0.3; let px=rig.position.x, pz=rig.position.z;
   for(const o of colliders){ let dx=px-o.x, dz=pz-o.z, d=Math.hypot(dx,dz); const min=o.r+pr;
     if(d<min){ if(d<1e-4){ dx=1; dz=0; d=1; } px=o.x+dx/d*min; pz=o.z+dz/d*min; } }
+  // keep player inside the flat clearing so they don't walk into terrain hills
+  const maxR=14, pr2=Math.hypot(px,pz);
+  if(pr2>maxR){ px=px/pr2*maxR; pz=pz/pr2*maxR; }
   rig.position.x=px; rig.position.z=pz;
 }
 
@@ -1402,8 +1264,8 @@ enterBtn.addEventListener('click', ()=>{
 document.getElementById('resetBtn').addEventListener('click', ()=>{
   if(confirm('Reset all progress? Tokens and upgrades will be wiped (your username is kept).')){
     const name=S.username; localStorage.removeItem('tokenCasino');
-    Object.assign(S,{tokens:100,luckLv:1,payLv:1,autoLv:0,slotLuckLv:1,plinkoLv:1,critLv:0,
-      wheelLv:0,diceLv:0,scratchLv:0,megaCritLv:0,fortuneLv:0,interestLv:0,
+    Object.assign(S,{tokens:100,luckLv:1,payLv:1,autoLv:0,plinkoLv:1,plinkoExpandLv:0,megaExpandLv:0,critLv:0,
+      megaCritLv:0,fortuneLv:0,interestLv:0,
       overLv:0,cloverLv:0,vaultLv:0,cosmicLv:0,omniLv:0,eternityLv:0,infinityLv:0,apotheosisLv:0,
       betMul:1,topWins:[],username:name});
     save(); location.reload();
