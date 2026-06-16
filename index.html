@@ -500,6 +500,7 @@ function dropPlinko(){
 function stepBalls(dt){
   for(let i=balls.length-1;i>=0;i--){ const b=balls[i];
     b.userData.vy -= 1.8*dt; b.position.y += b.userData.vy*dt; b.position.x += b.userData.vx + b.userData.bias; b.userData.vx*=0.96;
+    for(let p of pPegs){ const dx=b.position.x-p.position.x, dy=b.position.y-p.position.y, dz=b.position.z-p.position.z, dist=Math.sqrt(dx*dx+dy*dy+dz*dz); if(dist<0.16){ const nx=dx/dist, ny=dy/dist; b.userData.vy=Math.abs(b.userData.vy)*0.6; b.userData.vx+=nx*0.15; b.position.x+=nx*0.01; b.position.y+=ny*0.01; } }
     const mults=getPlinkoMults(); const halfW=mults.length*0.36/2;
     if(b.position.x<-halfW){b.position.x=-halfW;b.userData.vx*=-0.5;} if(b.position.x>halfW){b.position.x=halfW;b.userData.vx*=-0.5;}
     if(b.position.y<=0.5){
