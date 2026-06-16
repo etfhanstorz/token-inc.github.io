@@ -10,6 +10,7 @@ const {
   MQTT_URL = 'wss://broker.emqx.io:8084/mqtt',
   ADMINS = '',
   PATCHNOTES_WEBHOOK_URL = '',
+  NOTIFY_CHANNEL_ID = '',
 } = process.env;
 
 // Post a formatted patch-notes embed to a Discord webhook
@@ -34,16 +35,29 @@ if (!DISCORD_TOKEN) { console.error('Missing DISCORD_TOKEN in .env'); process.ex
 
 const allowed = ADMINS.split(',').map(s => s.trim()).filter(Boolean);
 const TOPIC = `tokencasino/${ADMIN_CHANNEL}/cmd`;
+const WIN_TOPIC = `tokencasino/${ADMIN_CHANNEL}/wins`;
 
 // ---- MQTT ----
-const mq = mqtt.connect(MQTT_URL, { reconnectPeriod: 4000 });
-mq.on('connect', () => console.log(`🔗 MQTT connected -> ${MQTT_URL} (topic ${TOPIC})`));
+const mq = mqtt.connect(MQTT_URL, { reconnectPeriod: 4000, rejectUnauthorized: false });
+mq.on('connect', () => {
+  console.log(`🔗 MQTT connected -> ${MQTT_URL} (topic ${TOPIC})`);
+  if (NOTIFY_CHANNEL_ID) mq.subscribe(WIN_TOPIC);
+});
+mq.on('message', (topic, payload) => {
+  if (topic !== WIN_TOPIC || !NOTIFY_CHANNEL_ID) return;
+  try {
+    const { username, game, amount, tokens } = JSON.parse(payload.toString());
+    const ch = client.channels.cache.get(NOTIFY_CHANNEL_ID);
+    if (!ch) return;
+    ch.send(`🎰 **${username}** won **🪙${Number(amount).toLocaleString()}** on **${game}** · Balance: 🪙${Number(tokens).toLocaleString()}`);
+  } catch (e) { console.error('win notify error', e); }
+});
 mq.on('error', e => console.error('MQTT error:', e.message));
 function publish(payload) { mq.publish(TOPIC, JSON.stringify(payload)); }
 
 // ---- Discord ----
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-client.once('clientReady', () => console.log(`🤖 Logged in as ${client.user.tag}`));
+client.once('ready', () => console.log(`🤖 Logged in as ${client.user.tag}`));
 
 client.on('interactionCreate', async (i) => {
   if (!i.isChatInputCommand()) return;
